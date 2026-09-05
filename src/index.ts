@@ -162,7 +162,7 @@ export async function apply(ctx: Context, config: SearchEnhanceConfigValue): Pro
       getConfig,
       isWebMapAvailable: agent => agent !== undefined && (
         effective.toolDiscovery.mode === 'all'
-        || foldEffectiveToolDisclosureEvents(agent.session.events).activeGroups
+        || foldEffectiveToolDisclosureEvents(agent.session.snapshotEvents()).activeGroups
           .includes('site_map')
       ),
       operations,

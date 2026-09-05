@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
-import { CallId, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { ToolCallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -16,7 +16,7 @@ const offHome = await mkdtemp(join(tmpdir(), 'dsh-search-enhance-map-off-'))
 const onHome = await mkdtemp(join(tmpdir(), 'dsh-search-enhance-map-on-'))
 const offConfigPath = join(offHome, 'cordis.yml')
 const onConfigPath = join(onHome, 'cordis.yml')
-const selfLink = join(packageRoot, 'node_modules', 'dsh-search-enhance')
+const selfLink = join(packageRoot, 'node_modules', '@kkkneko/dsh-search-enhance')
 const tavilySecret = 'web-map-loader-tavily-secret'
 const globalDefinitions = [
   'docs_search',
@@ -123,6 +123,8 @@ function loaderCore(home) {
     backend: json
 - id: sessions
   name: '@deepseek-ai/dsh-session'
+- id: session-projections
+  name: '@deepseek-ai/dsh-session-projection'
 - id: agents
   name: '@deepseek-ai/dsh-agent'
 - id: system-prompt
@@ -145,7 +147,7 @@ function loaderCore(home) {
 function progressiveConfig(home) {
   return `${loaderCore(home)}
 - id: search-enhance
-  name: dsh-search-enhance
+  name: '@kkkneko/dsh-search-enhance'
 `
 }
 
@@ -167,7 +169,7 @@ function allModeConfig(home) {
   config:
     agents: []
 - id: search-enhance
-  name: dsh-search-enhance
+  name: '@kkkneko/dsh-search-enhance'
   config:
     toolDiscovery:
       mode: all
@@ -222,7 +224,7 @@ function normalizeToolResultEvent(event) {
 }
 
 function mapTranscript(session, callId) {
-  return session.events.flatMap(event => {
+  return session.snapshotEvents().flatMap(event => {
     if (event.type === 'tool/call' && String(event.data.callId) === callId) {
       return [{
         type: event.type,
@@ -240,7 +242,7 @@ function mapTranscript(session, callId) {
 }
 
 function codeDispatches(session) {
-  return session.events.flatMap(event => {
+  return session.snapshotEvents().flatMap(event => {
     if (event.type !== 'tool/code-dispatch-start' && event.type !== 'tool/code-dispatch') return []
     return [normalize({ type: event.type, data: event.data })]
   })
@@ -284,6 +286,7 @@ try {
     await lstat(selfLink)
   } catch (error) {
     if (error?.code !== 'ENOENT') throw error
+    await mkdir(dirname(selfLink), { recursive: true })
     await symlink(packageRoot, selfLink, 'junction')
     createdSelfLink = true
   }
@@ -293,7 +296,7 @@ try {
   const [{ boot }, scriptedModule, configModule] = await Promise.all([
     import('@deepseek-ai/dsh-app-boot'),
     import(pathToFileURL(fixturePath).href),
-    import('dsh-search-enhance/config'),
+    import('@kkkneko/dsh-search-enhance/config'),
   ])
 
   process.env.DSH_HOME = offHome
@@ -305,7 +308,7 @@ try {
     packageJsonUrl,
   )
   await offCtx.loader.await()
-  const offEntry = [...offCtx.loader.entries()].find(entry => entry.options.name === 'dsh-search-enhance')
+  const offEntry = [...offCtx.loader.entries()].find(entry => entry.options.name === '@kkkneko/dsh-search-enhance')
   assert.ok(offEntry?.fiber)
   await offEntry.fiber.await()
   const progressiveGlobalSchemas = schemaNames(offCtx)
@@ -364,7 +367,7 @@ try {
     packageJsonUrl,
   )
   await onCtx.loader.await()
-  const pluginEntry = [...onCtx.loader.entries()].find(entry => entry.options.name === 'dsh-search-enhance')
+  const pluginEntry = [...onCtx.loader.entries()].find(entry => entry.options.name === '@kkkneko/dsh-search-enhance')
   assert.ok(pluginEntry?.fiber)
   await pluginEntry.fiber.await()
 
@@ -395,7 +398,7 @@ try {
   const nativeAgent = nativeHandle.agent
 
   const manifestResult = await onCtx.tools.execute({
-    callId: CallId('web-map-manifest'),
+    callId: ToolCallId('web-map-manifest'),
     name: 'search_tools',
     arguments: { capabilities: ['site_map'] },
     agent: nativeAgent,
@@ -412,7 +415,7 @@ try {
 
   const missingArgs = { operation: 'web_map', arguments: { url: `${origin}/site/missing` } }
   const missingCredential = await onCtx.tools.execute({
-    callId: CallId('missing-map-credential'),
+    callId: ToolCallId('missing-map-credential'),
     name: 'search_call',
     arguments: missingArgs,
     agent: nativeAgent,
@@ -456,7 +459,7 @@ try {
 
   const codeAgent = await createAgent(
     'web-map-code-session',
-    agentCtx => { agentCtx.tools.presentAs('code') },
+    agentCtx => { agentCtx.tools.presentAs('ptc') },
   )
   await followup(nativeAgent, 'Map the fixture documentation website.')
   await followup(codeAgent, 'Use Code Mode to map the fixture website.')
@@ -478,10 +481,10 @@ try {
   assert.equal(nestedObserved.result.meta, undefined)
   assert.deepEqual(nestedObserved.result.value.results, nativeObserved.result.value.results)
 
-  const nativeCallEvent = nativeAgent.session.events.find(event => (
+  const nativeCallEvent = nativeAgent.session.snapshotEvents().find(event => (
     event.type === 'tool/call' && String(event.data.callId) === 'native-map-call'
   ))
-  const nativeResultEvent = nativeAgent.session.events.find(event => (
+  const nativeResultEvent = nativeAgent.session.snapshotEvents().find(event => (
     event.type === 'tool/result'
     && String(event.data.message.content[0]?.toolCallId) === 'native-map-call'
   ))
@@ -519,8 +522,8 @@ try {
   assert.equal('meta' in dispatchEvents[1].data, false)
 
   const sessions = JSON.stringify([
-    nativeAgent.session.events,
-    codeAgent.session.events,
+    nativeAgent.session.snapshotEvents(),
+    codeAgent.session.snapshotEvents(),
   ])
   assert.equal(sessions.includes(tavilySecret), false)
   assert.equal(sessions.toLowerCase().includes('authorization'), false)
@@ -529,7 +532,7 @@ try {
 
   const oldDefinition = onCtx.tools.get('search_call')
   const activeMap = onCtx.tools.execute({
-    callId: CallId('active-map-restart'),
+    callId: ToolCallId('active-map-restart'),
     name: 'search_call',
     arguments: {
       operation: 'web_map',
@@ -550,7 +553,7 @@ try {
   assert.equal(descriptors().length, 1)
 
   const postRestart = await onCtx.tools.execute({
-    callId: CallId('post-restart-map'),
+    callId: ToolCallId('post-restart-map'),
     name: 'search_call',
     arguments: {
       operation: 'web_map',

@@ -38,4 +38,4 @@
   config:
     watch: false
 - id: search-enhance
-  name: dsh-search-enhance
+  name: '@kkkneko/dsh-search-enhance'

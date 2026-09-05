@@ -2,7 +2,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { AgentRegistry } from '@deepseek-ai/dsh-agent'
 import { WorkerThreadCodeRuntime } from '@deepseek-ai/dsh-code-runtime-worker-thread'
 import { Context } from '@deepseek-ai/cordis'
-import { CallId, createToolResultMessage } from '@deepseek-ai/dsh-llm'
+import { ToolCallId, createToolResultMessage } from '@deepseek-ai/dsh-llm'
 import { createScope, type Scope, type ScopeKey } from '@deepseek-ai/dsh-scope'
 import {
   SessionId,
@@ -120,12 +120,12 @@ interface RuntimeHarness {
   manager: AgentToolDisclosureManager | undefined
 }
 
-async function createHarness(mode: 'native' | 'code' = 'native'): Promise<RuntimeHarness> {
+async function createHarness(mode: 'native' | 'ptc' = 'native'): Promise<RuntimeHarness> {
   const ctx = new Context()
   new SessionStore(ctx)
   new AgentRegistry(ctx)
   new SystemPrompt(ctx, {})
-  if (mode === 'code') {
+  if (mode === 'ptc') {
     new WorkerThreadCodeRuntime(ctx, {
       computeMs: 1000,
       maxWallMs: 5000,
@@ -204,7 +204,7 @@ function appendDisclosure(
   complete = true,
 ): void {
   session.append('step/start', { turn: 1, step })
-  const callId = CallId(`disclose-${step}`)
+  const callId = ToolCallId(`disclose-${step}`)
   const call = session.append('tool/call', {
     turn: 1,
     step,
@@ -226,7 +226,7 @@ function appendDisclosure(
 
 function appendNativeSource(session: Session, step: number): void {
   session.append('step/start', { turn: 1, step })
-  const callId = CallId(`source-${step}`)
+  const callId = ToolCallId(`source-${step}`)
   const call = session.append('tool/call', {
     turn: 1,
     step,
@@ -267,7 +267,7 @@ async function execute(
   args: unknown,
 ): Promise<ToolExecutionResult> {
   return runtime.execute({
-    callId: CallId(`${name}-${Math.random()}`),
+    callId: ToolCallId(`${name}-${Math.random()}`),
     name,
     arguments: args,
     agent,
@@ -343,7 +343,7 @@ describe('fixed progressive-disclosure surface', () => {
       expect(sourcePage).toMatchObject({ isError: false, value: 'page' })
 
       const recovered = await createAgent(harness.ctx, 'fixed-native-recovered', {
-        events: agentA.session.events,
+        events: agentA.session.snapshotEvents(),
       })
       try {
         expect(assemblySnapshot(await assembly(harness.ctx, recovered.agent))).toEqual(initial)
@@ -368,7 +368,7 @@ describe('fixed progressive-disclosure surface', () => {
   })
 
   it('keeps Code SDK text and the top-level run_code schema fixed across the same transitions', async () => {
-    const harness = await createHarness('code')
+    const harness = await createHarness('ptc')
     const agent = await createAgent(harness.ctx, 'fixed-code')
     try {
       const initialAssembly = await assembly(harness.ctx, agent.agent)
@@ -384,7 +384,7 @@ describe('fixed progressive-disclosure surface', () => {
       expect(assemblySnapshot(await assembly(harness.ctx, agent.agent))).toEqual(initial)
 
       const recovered = await createAgent(harness.ctx, 'fixed-code-recovered', {
-        events: agent.session.events,
+        events: agent.session.snapshotEvents(),
       })
       try {
         expect(assemblySnapshot(await assembly(harness.ctx, recovered.agent))).toEqual(initial)
@@ -500,8 +500,8 @@ describe('Agent lifecycle and source recovery bridge', () => {
     try {
       const parent = Symbol('parent') as never
       const result = await harness.runtime.execute({
-        callId: CallId('code-source-subcall'),
-        rootCallId: CallId('code-source-root'),
+        callId: ToolCallId('code-source-subcall'),
+        rootCallId: ToolCallId('code-source-root'),
         name: 'web_search',
         arguments: { query: 'source' },
         agent: agent.agent,
@@ -512,7 +512,7 @@ describe('Agent lifecycle and source recovery bridge', () => {
       const content = harness.manager?.shapeCodeDispatchLog({
         exec: {} as never,
         agent: agent.agent,
-        subCallId: CallId('code-source-subcall'),
+        subCallId: ToolCallId('code-source-subcall'),
         name: 'web_search',
         isError: false,
         content: [...result.content],
@@ -521,9 +521,9 @@ describe('Agent lifecycle and source recovery bridge', () => {
 
       agent.session.append('step/start', { turn: 1, step: 1 })
       agent.session.append('tool/code-dispatch', {
-        rootCallId: CallId('code-source-root'),
-        parentCallId: CallId('code-source-parent'),
-        subCallId: CallId('code-source-subcall'),
+        rootCallId: ToolCallId('code-source-root'),
+        parentCallId: ToolCallId('code-source-parent'),
+        subCallId: ToolCallId('code-source-subcall'),
         name: 'web_search',
         arguments: { query: 'source' },
         isError: false,

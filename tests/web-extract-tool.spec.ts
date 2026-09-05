@@ -1,7 +1,7 @@
 import { Buffer } from 'node:buffer'
 
 import { Context } from '@deepseek-ai/cordis'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { SystemPrompt } from '@deepseek-ai/dsh-system-prompt'
 import {
   ToolRuntime,
@@ -126,8 +126,8 @@ function output(overrides: Partial<WebExtractOutput> = {}): WebExtractOutput {
 
 function runContext(args: unknown, signal = new AbortController().signal): ToolRunContext {
   return {
-    callId: CallId('web-extract-tool-call'),
-    rootCallId: CallId('web-extract-tool-call'),
+    callId: ToolCallId('web-extract-tool-call'),
+    rootCallId: ToolCallId('web-extract-tool-call'),
     name: 'web_extract',
     arguments: args,
     token: Symbol('web-extract-tool') as never,
@@ -296,7 +296,7 @@ describe('web_extract model tool contract', () => {
     ctx.tools.register(failed.tool)
     try {
       const result = await ctx.tools.execute({
-        callId: CallId('web-extract-safe-failure'),
+        callId: ToolCallId('web-extract-safe-failure'),
         name: 'web_extract',
         arguments: { url: 'https://secret-target.invalid/path' },
         signal: new AbortController().signal,

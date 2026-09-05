@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer'
 
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import {
   parameterSchemaSpecToJsonSchema,
   validateJsonSchemaValue,
@@ -63,8 +63,8 @@ function providerResult(overrides: Partial<TavilyMapResult> = {}): TavilyMapResu
 
 function runContext(args: unknown, signal = new AbortController().signal): ToolRunContext {
   return {
-    callId: CallId('web-map-tool-call'),
-    rootCallId: CallId('web-map-tool-call'),
+    callId: ToolCallId('web-map-tool-call'),
+    rootCallId: ToolCallId('web-map-tool-call'),
     name: 'web_map',
     arguments: args,
     token: Symbol('web-map-tool') as never,

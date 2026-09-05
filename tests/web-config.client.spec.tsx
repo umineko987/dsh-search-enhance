@@ -3,6 +3,7 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context, Service } from '@deepseek-ai/cordis'
+import { SlotCore, type PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 
 import * as client from '../src/client/index.js'
 import {
@@ -161,29 +162,27 @@ class TestLocale extends Service {
   }
 }
 
-interface TestSlotEntry {
-  options: Record<string, unknown>
-  component: unknown
-}
-
 class TestSlots extends Service {
-  readonly entries: TestSlotEntry[] = []
+  private readonly core = new SlotCore()
+
+  readonly register = this.core.register.bind(this.core)
 
   constructor(ctx: Context) {
     super(ctx, 'slots')
+    this.ctx.effect(() => this.register({
+      name: 'root',
+      children: { 'settings.plugin.item': { kind: 'keyed', scope: 'root' } },
+    }, ({ renderSlot }: PropsRenderSlots<'settings.plugin.item'>) => (
+      renderSlot('settings.plugin.item', {}, { entryKey: 'search-enhance' })
+    )), 'test settings slot declaration')
+  }
+
+  get entries() {
+    return this.core.entries('settings.plugin.item')
   }
 
   inject(_name: string, register: () => unknown): void {
     this.ctx.effect(register as () => () => void, 'test slot injection')
-  }
-
-  register(options: Record<string, unknown>, component: unknown): () => void {
-    const entry = { options, component }
-    this.entries.push(entry)
-    return () => {
-      const index = this.entries.indexOf(entry)
-      if (index !== -1) this.entries.splice(index, 1)
-    }
   }
 }
 
@@ -198,7 +197,7 @@ afterEach(async () => {
 })
 
 describe('Search Enhance browser contribution', () => {
-  it('registers exactly one stable settings.plugin.item card and cleans it across restart/dispose', async () => {
+  it('registers one keyed settings card and cleans it across restart/dispose', async () => {
     const ctx = new Context()
     contexts.add(ctx)
     await ctx.plugin(TestSlots)
@@ -212,16 +211,14 @@ describe('Search Enhance browser contribution', () => {
     const locale = ctx.get('locale') as unknown as TestLocale
 
     expect(slots.entries).toHaveLength(1)
-    expect(slots.entries[0]?.options).toMatchObject({
-      name: 'settings.plugin.item',
-      id: 'dsh-search-enhance',
-      order: 25,
-      locale: 'settings.search-enhance',
-    })
+    expect(slots.entries[0]?.options).toEqual({ key: snapshot().namespace })
+    expect(slots.entries[0]?.locale).toBe('settings.search-enhance')
+    expect(slots.entries[0]?.component).toBe(SearchEnhancePluginCard)
     expect(locale.namespaces).toEqual(new Set(['settings.search-enhance']))
 
     await plugin.restart()
     expect(slots.entries).toHaveLength(1)
+    expect(slots.entries[0]?.options.key).toBe(snapshot().namespace)
     expect(locale.namespaces).toEqual(new Set(['settings.search-enhance']))
 
     await plugin.dispose()

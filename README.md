@@ -2,13 +2,13 @@
 
 English | [简体中文](README.zh.md)
 
-`dsh-search-enhance` is a search extension for DeepSeek Harness. It uses a Grok-compatible Search API for primary web answers and can optionally use Context7, Exa, Tavily, and Firecrawl for documentation lookup, supplementary discovery, page extraction, and site mapping.
+`@kkkneko/dsh-search-enhance` is a search extension for DeepSeek Harness. It uses a Grok-compatible Search API for primary web answers and can optionally use Context7, Exa, Tavily, and Firecrawl for documentation lookup, supplementary discovery, page extraction, and site mapping.
 
 The plugin handles search, source retention, and page retrieval as separate steps. `web_search` and `docs_search` return an answer or documentation snippets with visible sources; the complete source record can be stored under a `source_ref` and paged later. Important pages can then be retrieved with `web_extract`, so search snippets remain distinct from fetched page content.
 
 > Bring your own endpoints and credentials. The plugin ships no API keys. A Grok-compatible endpoint is required for `web_search`; Context7, Exa, Tavily, and Firecrawl are optional.
 
-![A DSH Web session that searches, checks documentation, extracts an official page, and returns a sourced answer](https://raw.githubusercontent.com/KKKneko/dsh-search-enhance/main/assets/search-workflow.png)
+![A DSH Web session that searches, checks documentation, extracts an official page, and returns a sourced answer](https://raw.githubusercontent.com/umineko987/dsh-search-enhance/main/assets/search-workflow.png)
 
 ## Key characteristics
 
@@ -21,16 +21,20 @@ The plugin handles search, source retention, and page retrieval as separate step
 - Native Tool Mode and Code Mode use the same fixed tool surface and canonical outputs. DSH Settings, Credentials, Agent Presets, guards, and lifecycle cleanup continue to apply.
 - Optional Providers are skipped when unconfigured. Tavily and Firecrawl supplementary-search budgets default to `0`, and optional Provider failures remain visible in the result.
 
-For the complete routing, evidence, and progressive-disclosure flow, see [Search workflow architecture](https://github.com/KKKneko/dsh-search-enhance/blob/main/guides/search-workflow.md).
+For the complete routing, evidence, and progressive-disclosure flow, see [Search workflow architecture](https://github.com/umineko987/dsh-search-enhance/blob/main/guides/search-workflow.md).
 
 ## Quick start
 
 ### 1. Install
 
+Requires DSH `^0.1.2-rc.1`; older DSH releases are no longer supported.
+
+If migrating from the unscoped `dsh-search-enhance` package, first run `dsh plugin --profile web remove dsh-search-enhance`.
+
 Install the published bundle into the DSH `web` profile:
 
 ```bash
-dsh plugin --profile web add dsh-search-enhance@latest
+dsh plugin --profile web add @kkkneko/dsh-search-enhance@latest
 ```
 
 ### 2. Start DSH Web
@@ -97,7 +101,7 @@ When `web_search` or `docs_search` returns a `source_ref`, the plugin automatica
 To update, run the installation command above again. To remove the plugin:
 
 ```bash
-dsh plugin --profile web remove dsh-search-enhance
+dsh plugin --profile web remove @kkkneko/dsh-search-enhance
 ```
 
 Restart DSH after updating or removing the bundle.

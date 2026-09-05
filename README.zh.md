@@ -2,13 +2,13 @@
 
 [English](README.md) | 简体中文
 
-`dsh-search-enhance` 是 DeepSeek Harness 的搜索增强插件。它使用 Grok-compatible Search API 生成普通网页搜索的主要回答，并可选用 Context7、Exa、Tavily 和 Firecrawl 完成文档检索、补充来源、网页正文提取和站点页面发现。
+`@kkkneko/dsh-search-enhance` 是 DeepSeek Harness 的搜索增强插件。它使用 Grok-compatible Search API 生成普通网页搜索的主要回答，并可选用 Context7、Exa、Tavily 和 Firecrawl 完成文档检索、补充来源、网页正文提取和站点页面发现。
 
 插件将搜索、来源保留和页面读取作为不同步骤处理。`web_search` 和 `docs_search` 返回搜索回答或文档片段以及可见来源；完整来源记录可通过 `source_ref` 保存并继续分页读取；需要核对重要内容时，再由 `web_extract` 获取选中页面。因此，搜索 snippet 与实际读取的网页正文会保持明确区分。
 
 > 你需要自行提供所选服务的端点和凭据，插件不内置任何 API Key。`web_search` 需要 Grok-compatible 端点；Context7、Exa、Tavily 和 Firecrawl 均为可选 Provider。
 
-![DSH Web 会话：搜索、检索文档、提取官方页面并生成带来源的回答](https://raw.githubusercontent.com/KKKneko/dsh-search-enhance/main/assets/search-workflow.png)
+![DSH Web 会话：搜索、检索文档、提取官方页面并生成带来源的回答](https://raw.githubusercontent.com/umineko987/dsh-search-enhance/main/assets/search-workflow.png)
 
 ## 主要特点
 
@@ -21,16 +21,20 @@
 - Native Tool Mode 与 Code Mode 使用相同的固定工具入口和规范输出。DSH Settings、Credentials、Agent Preset、guard 和生命周期清理继续生效。
 - 未配置的可选 Provider 会被跳过。Tavily 和 Firecrawl 的补充搜索预算默认是 `0`，可选 Provider 失败也会在结果中显示。
 
-完整的路由、证据处理和渐进披露流程见[搜索链路架构](https://github.com/KKKneko/dsh-search-enhance/blob/main/guides/search-workflow.zh.md)。
+完整的路由、证据处理和渐进披露流程见[搜索链路架构](https://github.com/umineko987/dsh-search-enhance/blob/main/guides/search-workflow.zh.md)。
 
 ## 快速开始
 
 ### 1. 安装
 
+需要 DSH `^0.1.2-rc.1`，不再支持更早的 DSH 版本。
+
+如果从旧的无 scope 包 `dsh-search-enhance` 迁移，请先运行 `dsh plugin --profile web remove dsh-search-enhance`。
+
 将已发布的 bundle 安装到 DSH `web` profile：
 
 ```bash
-dsh plugin --profile web add dsh-search-enhance@latest
+dsh plugin --profile web add @kkkneko/dsh-search-enhance@latest
 ```
 
 ### 2. 启动 DSH Web
@@ -97,7 +101,7 @@ dsh web
 更新时重新运行上面的安装命令。卸载插件：
 
 ```bash
-dsh plugin --profile web remove dsh-search-enhance
+dsh plugin --profile web remove @kkkneko/dsh-search-enhance
 ```
 
 更新或卸载 bundle 后请重启 DSH。

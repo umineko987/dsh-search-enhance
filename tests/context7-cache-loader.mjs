@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { lstat, mkdtemp, readFile, rm, symlink, unlink, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, rm, symlink, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -8,7 +8,7 @@ const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)))
 const dshHome = await mkdtemp(join(tmpdir(), 'dsh-search-enhance-context7-'))
 const exampleConfig = join(packageRoot, 'examples/headless/cordis.yml')
 const loaderConfig = join(dshHome, 'cordis.yml')
-const selfLink = join(packageRoot, 'node_modules', 'dsh-search-enhance')
+const selfLink = join(packageRoot, 'node_modules', '@kkkneko/dsh-search-enhance')
 const originalConfig = await readFile(exampleConfig, 'utf8')
 const expectedGlobalTools = [
   'docs_search',
@@ -67,6 +67,7 @@ try {
     await lstat(selfLink)
   } catch (error) {
     if (error?.code !== 'ENOENT') throw error
+    await mkdir(dirname(selfLink), { recursive: true })
     await symlink(packageRoot, selfLink, 'junction')
     createdSelfLink = true
   }
@@ -74,7 +75,7 @@ try {
 
   const [{ boot }, documentation] = await Promise.all([
     import('@deepseek-ai/dsh-app-boot'),
-    import('dsh-search-enhance/documentation'),
+    import('@kkkneko/dsh-search-enhance/documentation'),
   ])
 
   ctx = await boot(
@@ -86,7 +87,7 @@ try {
   )
   await ctx.loader.await()
   const pluginEntry = [...ctx.loader.entries()].find(
-    entry => entry.options.name === 'dsh-search-enhance',
+    entry => entry.options.name === '@kkkneko/dsh-search-enhance',
   )
   assert.ok(pluginEntry?.fiber, 'Loader did not create the package fiber')
   await pluginEntry.fiber.await()

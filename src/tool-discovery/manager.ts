@@ -3,7 +3,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type {
-  CodeDispatchLog,
+  PtcDispatchLog,
   ToolDefinition,
   ToolExecution,
   ToolExecutionResult,
@@ -101,7 +101,7 @@ export class AgentToolDisclosureManager {
   }
 
   /** Append one reference-free recovery fact to a successful Code dispatch log. */
-  shapeCodeDispatchLog(dispatch: CodeDispatchLog, content: ContentBlock[]): ContentBlock[] {
+  shapeCodeDispatchLog(dispatch: PtcDispatchLog, content: ContentBlock[]): ContentBlock[] {
     if (this.disposed || dispatch.agent === undefined) return content
     const state = this.byAgent.get(dispatch.agent)
     const callId = String(dispatch.subCallId)
@@ -140,7 +140,7 @@ export function installAgentToolDisclosure(
     manager.observeToolResult(execution, result)
     return undefined
   })
-  ctx.on('tools/code-dispatch-log', async (dispatch, next) => (
+  ctx.on('tools/ptc-dispatch-log', async (dispatch, next) => (
     manager.shapeCodeDispatchLog(dispatch, await next())
   ))
   ctx.on('session/event', (session, event) => manager.observeSession(session, event))

@@ -1,11 +1,11 @@
 import { Buffer } from 'node:buffer'
 
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { CallId, createToolResultMessage } from '@deepseek-ai/dsh-llm'
+import { ToolCallId, createToolResultMessage } from '@deepseek-ai/dsh-llm'
 import {
   Session,
   SessionId,
-  type JsonValue,
+  SessionSeq,
   type SessionEvent,
 } from '@deepseek-ai/dsh-session'
 import {
@@ -16,6 +16,7 @@ import {
   type ToolDefinition,
   type ToolRunContext,
 } from '@deepseek-ai/dsh-tools'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { describe, expect, it } from 'vitest'
 
 import { Config } from '../src/config.js'
@@ -132,8 +133,8 @@ function runContext(
   signal = new AbortController().signal,
 ): ToolRunContext {
   return {
-    callId: CallId(`${name}-call`),
-    rootCallId: CallId(`${name}-call`),
+    callId: ToolCallId(`${name}-call`),
+    rootCallId: ToolCallId(`${name}-call`),
     name,
     arguments: args,
     ...(agent === undefined ? {} : { agent }),
@@ -158,12 +159,12 @@ function nativeCall(
 ): SessionEvent {
   return {
     type: 'tool/call',
-    seq,
+    seq: SessionSeq(seq),
     time: seq,
     data: {
       turn: 1,
       step: 1,
-      callId: CallId(callId),
+      callId: ToolCallId(callId),
       name,
       arguments: JSON.stringify(args),
     },
@@ -181,13 +182,13 @@ function nativeResult(
   const isError = options.isError ?? false
   return {
     type: 'tool/result',
-    seq,
+    seq: SessionSeq(seq),
     time: seq,
     data: {
       turn: 1,
       step: 1,
       message: createToolResultMessage({
-        callId: CallId(callId),
+        callId: ToolCallId(callId),
         content: [{ type: 'text', text: isError ? 'failed' : 'ok' }],
         isError,
       }),
@@ -200,26 +201,26 @@ function nativeResult(
         },
       }),
     },
-    sourceEventSeqs: [seq - 1],
+    sourceEventSeqs: [SessionSeq(seq - 1)],
     surfaceOp: 'append',
   }
 }
 
 function completedDisclosureEvents(capabilities: readonly string[]): SessionEvent[] {
   return [
-    { type: 'step/start', seq: 0, time: 0, data: { turn: 1, step: 1 } },
+    { type: 'step/start', seq: SessionSeq(0), time: 0, data: { turn: 1, step: 1 } },
     nativeCall(1, 'disclose', 'search_tools', { capabilities }),
     nativeResult(2, 'disclose'),
-    { type: 'step/end', seq: 3, time: 3, data: { turn: 1, step: 1 } },
+    { type: 'step/end', seq: SessionSeq(3), time: 3, data: { turn: 1, step: 1 } },
   ]
 }
 
 function sourceEvents(): SessionEvent[] {
   return [
-    { type: 'step/start', seq: 0, time: 0, data: { turn: 1, step: 1 } },
+    { type: 'step/start', seq: SessionSeq(0), time: 0, data: { turn: 1, step: 1 } },
     nativeCall(1, 'source', 'docs_search', { query: 'React docs' }),
     nativeResult(2, 'source', { sourceProducedBy: 'docs_search' }),
-    { type: 'step/end', seq: 3, time: 3, data: { turn: 1, step: 1 } },
+    { type: 'step/end', seq: SessionSeq(3), time: 3, data: { turn: 1, step: 1 } },
   ]
 }
 
@@ -267,7 +268,7 @@ describe('progressive capability definitions and folding', () => {
     expect(foldEffectiveToolDisclosureEvents(unfinished).activeGroups).toEqual([])
     expect(foldEffectiveToolDisclosureEvents([
       ...unfinished,
-      { type: 'step/end', seq: 3, time: 3, data: { turn: 1, step: 1 } },
+      { type: 'step/end', seq: SessionSeq(3), time: 3, data: { turn: 1, step: 1 } },
     ]).activeGroups).toEqual(['site_map'])
   })
 
@@ -280,12 +281,12 @@ describe('progressive capability definitions and folding', () => {
 
     const codeEvent: SessionEvent = {
       type: 'tool/code-dispatch',
-      seq: 1,
+      seq: SessionSeq(1),
       time: 1,
       data: {
-        rootCallId: CallId('root'),
-        parentCallId: CallId('parent'),
-        subCallId: CallId('sub'),
+        rootCallId: ToolCallId('root'),
+        parentCallId: ToolCallId('parent'),
+        subCallId: ToolCallId('sub'),
         name: 'web_search',
         arguments: { query: 'x' },
         isError: false,

@@ -1,5 +1,4 @@
 import { credentialRef, type CredentialRef } from '@deepseek-ai/dsh-credentials'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import Schema from '@deepseek-ai/schemastery'
 
 import {
@@ -403,7 +402,7 @@ export const DEFAULT_SEARCH_BUDGETS: SearchBudgets = {
 /** Deployment ceiling for one profile's supplementary discovery-source budget. */
 export const EXTRA_DISCOVERY_SOURCES_MAX = 100
 
-export const SEARCH_ENHANCE_SETTINGS_NAMESPACE = settingsNamespace('search-enhance')
+export const SEARCH_ENHANCE_SETTINGS_NAMESPACE = 'search-enhance'
 
 const httpUrl = (defaultValue: string) =>
   Schema.string()

@@ -1,6 +1,6 @@
 import { Context } from '@deepseek-ai/cordis'
 import {
-  CallId,
+  ToolCallId,
   createToolResultMessage,
   createUserMessage,
 } from '@deepseek-ai/dsh-llm'
@@ -390,7 +390,7 @@ describe('owner, restored-session, and structured fork authorization', () => {
         turn: 1,
         step: 1,
         message: createToolResultMessage({
-          callId: CallId(identity.callId),
+          callId: ToolCallId(identity.callId),
           content: [{ type: 'text', text: commit.sourceRef }],
           isError: false,
         }),
@@ -401,7 +401,7 @@ describe('owner, restored-session, and structured fork authorization', () => {
         turn: 1,
         step: 1,
         message: createToolResultMessage({
-          callId: CallId(identity.callId),
+          callId: ToolCallId(identity.callId),
           content: [{ type: 'text', text: `source ${commit.sourceRef}` }],
           isError: false,
         }),
@@ -449,9 +449,9 @@ describe('owner, restored-session, and structured fork authorization', () => {
         content: [{ type: 'text', text: `stored ${commit.sourceRef}` }],
         isError: false,
         name: identity.name,
-        parentCallId: CallId(identity.rootCallId),
-        rootCallId: CallId(identity.rootCallId),
-        subCallId: CallId(identity.callId),
+        parentCallId: ToolCallId(identity.rootCallId),
+        rootCallId: ToolCallId(identity.rootCallId),
+        subCallId: ToolCallId(identity.callId),
       })
       const child = context.sessions.fork(owner, undefined, SessionId('child-code'))
       const grandchild = context.sessions.fork(child, undefined, SessionId('grandchild-code'))
@@ -464,9 +464,9 @@ describe('owner, restored-session, and structured fork authorization', () => {
         content: [{ type: 'text', text: commit.sourceRef }],
         isError: true,
         name: identity.name,
-        parentCallId: CallId(identity.rootCallId),
-        rootCallId: CallId(identity.rootCallId),
-        subCallId: CallId(identity.callId),
+        parentCallId: ToolCallId(identity.rootCallId),
+        rootCallId: ToolCallId(identity.rootCallId),
+        subCallId: ToolCallId(identity.callId),
       })
       const failedFork = context.sessions.fork(
         failedParent,

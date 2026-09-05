@@ -30,9 +30,7 @@ function successfulCodeDispatch(
 
 function inheritedEvents(session: Session): readonly SessionEvent[] {
   if (session.header.parentSession === undefined) return []
-  const seedLength = session.header.seedLength
-  if (!Number.isSafeInteger(seedLength) || seedLength === undefined || seedLength <= 0) return []
-  return session.events.slice(0, Math.min(seedLength, session.events.length))
+  return session.snapshotEvents(undefined, session.inheritedEventCount)
 }
 
 /** Authorize the owner immediately, or a fork only through inherited structured success events. */

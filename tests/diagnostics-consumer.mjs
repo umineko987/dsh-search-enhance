@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
-import { lstat, mkdtemp, readFile, readdir, rm, symlink, unlink, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
-import { CallId, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { ToolCallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -14,7 +14,7 @@ const snapshotPath = join(packageRoot, 'tests/snapshots/diagnostics-consumer.jso
 const packageJsonUrl = pathToFileURL(join(packageRoot, 'package.json')).href
 const dshHome = await mkdtemp(join(tmpdir(), 'dsh-search-enhance-diagnostics-'))
 const loaderConfig = join(dshHome, 'cordis.yml')
-const selfLink = join(packageRoot, 'node_modules', 'dsh-search-enhance')
+const selfLink = join(packageRoot, 'node_modules', '@kkkneko/dsh-search-enhance')
 const globalDefinitions = [
   'docs_search',
   'web_extract',
@@ -158,6 +158,8 @@ function loaderText() {
     backend: json
 - id: sessions
   name: '@deepseek-ai/dsh-session'
+- id: session-projections
+  name: '@deepseek-ai/dsh-session-projection'
 - id: system-prompt
   name: '@deepseek-ai/dsh-system-prompt'
 - id: tools
@@ -190,7 +192,7 @@ function loaderText() {
   config:
     watch: false
 - id: search-enhance
-  name: dsh-search-enhance
+  name: '@kkkneko/dsh-search-enhance'
   config:
     toolDiscovery:
       mode: all
@@ -243,7 +245,7 @@ function parseArguments(value) {
 }
 
 function eventSummary(session) {
-  return session.events.flatMap(event => {
+  return session.snapshotEvents().flatMap(event => {
     if (event.type === 'tool/call') {
       return [{
         type: event.type,
@@ -357,6 +359,7 @@ try {
     await lstat(selfLink)
   } catch (error) {
     if (error?.code !== 'ENOENT') throw error
+    await mkdir(dirname(selfLink), { recursive: true })
     await symlink(packageRoot, selfLink, 'junction')
     createdSelfLink = true
   }
@@ -375,7 +378,7 @@ try {
   )
   await ctx.loader.await()
   const pluginEntry = [...ctx.loader.entries()].find(
-    entry => entry.options.name === 'dsh-search-enhance',
+    entry => entry.options.name === '@kkkneko/dsh-search-enhance',
   )
   assert.ok(pluginEntry?.fiber, 'Loader did not create the diagnostics fiber')
   await pluginEntry.fiber.await()
@@ -451,12 +454,12 @@ try {
   const codeHandle = await ctx.agents.create({
     sessionId: SessionId('diagnostics-code-session'),
     agentOptions: { provider: 'search-enhance-scripted', model: 'fixture-model' },
-    setup: agentCtx => { agentCtx.tools.presentAs('code') },
+    setup: agentCtx => { agentCtx.tools.presentAs('ptc') },
   })
   handles.push(codeHandle)
 
   const manifestResult = await ctx.tools.execute({
-    callId: CallId('diagnostics-manifest'),
+    callId: ToolCallId('diagnostics-manifest'),
     name: 'search_tools',
     arguments: { capabilities: ['diagnostics'] },
     agent: nativeHandle.agent,
@@ -472,7 +475,7 @@ try {
   assert.equal('output_schema' in diagnosticsManifest, false)
 
   directShow = await ctx.tools.execute({
-    callId: CallId('diagnostics-direct-show'),
+    callId: ToolCallId('diagnostics-direct-show'),
     name: 'search_call',
     arguments: showGatewayArgs,
     agent: nativeHandle.agent,
@@ -532,17 +535,17 @@ try {
   assert.match(codeRequest.system, /search_call:/)
   assert.doesNotMatch(codeRequest.system, /\n\s+search_diagnostics: \{/u)
 
-  const showCallEvent = nativeHandle.agent.session.events.find(
+  const showCallEvent = nativeHandle.agent.session.snapshotEvents().find(
     event => event.type === 'tool/call' && String(event.data.callId) === 'native-diagnostics-show',
   )
-  const showResultEvent = nativeHandle.agent.session.events.find(
+  const showResultEvent = nativeHandle.agent.session.snapshotEvents().find(
     event => event.type === 'tool/result'
       && String(event.data.message.content[0]?.toolCallId) === 'native-diagnostics-show',
   )
-  const testCallEvent = nativeHandle.agent.session.events.find(
+  const testCallEvent = nativeHandle.agent.session.snapshotEvents().find(
     event => event.type === 'tool/call' && String(event.data.callId) === 'native-diagnostics-test',
   )
-  const testResultEvent = nativeHandle.agent.session.events.find(
+  const testResultEvent = nativeHandle.agent.session.snapshotEvents().find(
     event => event.type === 'tool/result'
       && String(event.data.message.content[0]?.toolCallId) === 'native-diagnostics-test',
   )
@@ -604,7 +607,7 @@ try {
   const oldDefinition = ctx.tools.get('search_call')
   slowModelList = true
   const activeTest = ctx.tools.execute({
-    callId: CallId('diagnostics-active-restart'),
+    callId: ToolCallId('diagnostics-active-restart'),
     name: 'search_call',
     arguments: testGatewayArgs,
     agent: nativeHandle.agent,
@@ -623,7 +626,7 @@ try {
   assert.equal(descriptors().length, 1)
 
   const postRestartShow = await ctx.tools.execute({
-    callId: CallId('diagnostics-post-restart-show'),
+    callId: ToolCallId('diagnostics-post-restart-show'),
     name: 'search_call',
     arguments: showGatewayArgs,
     agent: nativeHandle.agent,
@@ -641,7 +644,7 @@ try {
   assert.deepEqual(names(ctx), globalDefinitions)
   assert.equal(ctx.tools.get('search_call')?.name, 'search_call')
   const compatibilityCall = await ctx.tools.execute({
-    callId: CallId('diagnostics-compatibility-config'),
+    callId: ToolCallId('diagnostics-compatibility-config'),
     name: 'search_call',
     arguments: showGatewayArgs,
     agent: nativeHandle.agent,
@@ -650,8 +653,8 @@ try {
   assert.equal(compatibilityCall.isError, false)
 
   const allSessionText = JSON.stringify([
-    nativeHandle.agent.session.events,
-    codeHandle.agent.session.events,
+    nativeHandle.agent.session.snapshotEvents(),
+    codeHandle.agent.session.snapshotEvents(),
     requests,
   ])
   const homeText = await directoryText(dshHome)

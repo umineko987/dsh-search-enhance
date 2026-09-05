@@ -1,5 +1,5 @@
 import {
-  CallId,
+  ToolCallId,
   LlmAdapter,
 } from '@deepseek-ai/dsh-llm'
 
@@ -56,7 +56,7 @@ class ScriptedAdapter extends LlmAdapter {
         throw new Error('scripted tool response requires at least one call')
       }
       for (const [index, tool] of toolCalls.entries()) {
-        const id = CallId(tool.id)
+        const id = ToolCallId(tool.id)
         const argumentsText = JSON.stringify(tool.arguments)
         yield { type: 'block-start', index, blockType: 'tool-call' }
         yield {

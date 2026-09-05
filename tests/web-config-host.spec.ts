@@ -79,6 +79,13 @@ class MemoryCredentials extends CredentialProvider {
     this.values = new Map(Object.entries(config.values ?? {}))
   }
 
+  // This fixture exercises credential references, not the record API added in dsh 0.1.1.
+  readRecord(): never { throw new Error('Record credentials are outside this fixture') }
+  describeRecord(): never { throw new Error('Record credentials are outside this fixture') }
+  listRecords(): never { throw new Error('Record credentials are outside this fixture') }
+  modifyRecord(): never { throw new Error('Record credentials are outside this fixture') }
+  deleteRecord(): never { throw new Error('Record credentials are outside this fixture') }
+
   async resolve(ref: CredentialRef): Promise<ResolvedCredential | undefined> {
     const value = this.values.get(String(ref))
     return value === undefined || value === '' ? undefined : { value, source: 'file' }

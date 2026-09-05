@@ -1,8 +1,8 @@
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import {
   ToolArgsError,
   defineTool,
   parameterSchemaSpecToJsonSchema,
-  type JsonValue,
   type ToolCallView,
   type ToolDefinition,
   type ToolResult,
@@ -298,7 +298,7 @@ export function createSearchToolsTool(
       const requested = assertArguments(args)
       const activeBefore = dependencies.mode === 'all'
         ? CAPABILITY_GROUPS
-        : foldEffectiveToolDisclosureEvents(exec.agent.session.events).activeGroups
+        : foldEffectiveToolDisclosureEvents(exec.agent.session.snapshotEvents()).activeGroups
       const value = boundSearchToolsOutput(projectSearchToolsOutput(
         requested,
         activeBefore,

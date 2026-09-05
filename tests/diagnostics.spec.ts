@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer'
 
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import {
   parameterSchemaSpecToJsonSchema,
   validateJsonSchemaValue,
@@ -98,8 +98,8 @@ const networkProbeSet = (): readonly DiagnosticProbe[] => [
 
 function runContext(args: unknown, signal = new AbortController().signal): ToolRunContext {
   return {
-    callId: CallId('search-diagnostics-call'),
-    rootCallId: CallId('search-diagnostics-call'),
+    callId: ToolCallId('search-diagnostics-call'),
+    rootCallId: ToolCallId('search-diagnostics-call'),
     name: 'search_diagnostics',
     arguments: args,
     token: Symbol('search-diagnostics') as never,

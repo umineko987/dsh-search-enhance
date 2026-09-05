@@ -1,9 +1,9 @@
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import {
   ToolArgsError,
   defineTool,
   parameterSchemaSpecToJsonSchema,
   type InferArgs,
-  type JsonValue,
   type ParameterSchemaSpec,
   type ToolCallView,
   type ToolDefinition,

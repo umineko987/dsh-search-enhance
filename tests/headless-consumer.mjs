@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import {
-  CallId,
+  ToolCallId,
   createUserMessage,
 } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -21,7 +21,7 @@ const snapshotPath = join(packageRoot, 'tests/snapshots/headless-consumer.json')
 const packageJsonUrl = pathToFileURL(join(packageRoot, 'package.json')).href
 const dshHome = await mkdtemp(join(tmpdir(), 'dsh-search-enhance-headless-'))
 const loaderConfig = join(dshHome, 'cordis.yml')
-const selfLink = join(packageRoot, 'node_modules', 'dsh-search-enhance')
+const selfLink = join(packageRoot, 'node_modules', '@kkkneko/dsh-search-enhance')
 const searchSecret = 'headless-search-secret-value'
 const context7Secret = 'headless-context7-secret-value'
 const exaSecret = 'headless-exa-secret-value'
@@ -153,16 +153,16 @@ function normalizedToolResult(event, origin) {
 }
 
 function relevantTranscript(session, origin, throughCallId) {
-  const start = session.events.findIndex(event => (
+  const start = session.snapshotEvents().findIndex(event => (
     event.type === 'tool/call' && String(event.data.callId) === throughCallId
   ))
-  const boundary = session.events.findIndex(event => (
+  const boundary = session.snapshotEvents().findIndex(event => (
     event.type === 'tool/result'
     && String(event.data.message.content[0]?.toolCallId) === throughCallId
   ))
   assert.notEqual(start, -1, `missing transcript start for ${throughCallId}`)
   assert.ok(boundary >= start, `missing transcript boundary for ${throughCallId}`)
-  return session.events.slice(start, boundary + 1).flatMap(event => {
+  return session.snapshotEvents().slice(start, boundary + 1).flatMap(event => {
     if (event.type === 'tool/call') {
       return [{
         type: event.type,
@@ -395,6 +395,7 @@ try {
     await lstat(selfLink)
   } catch (error) {
     if (error?.code !== 'ENOENT') throw error
+    await mkdir(dirname(selfLink), { recursive: true })
     await symlink(packageRoot, selfLink, 'junction')
     createdSelfLink = true
   }
@@ -412,6 +413,8 @@ try {
     backend: json
 - id: sessions
   name: '@deepseek-ai/dsh-session'
+- id: session-projections
+  name: '@deepseek-ai/dsh-session-projection'
 - id: system-prompt
   name: '@deepseek-ai/dsh-system-prompt'
 - id: tools
@@ -448,7 +451,7 @@ try {
   config:
     watch: false
 - id: search-enhance
-  name: dsh-search-enhance
+  name: '@kkkneko/dsh-search-enhance'
   config:
     toolDiscovery:
       mode: progressive
@@ -501,7 +504,7 @@ try {
   ] = await Promise.all([
     import('@deepseek-ai/dsh-app-boot'),
     import(pathToFileURL(fixturePath).href),
-    import('dsh-search-enhance/source-storage'),
+    import('@kkkneko/dsh-search-enhance/source-storage'),
     import(pathToFileURL(webSearchFixturePath).href),
     import(pathToFileURL(webFetchFixturePath).href),
   ])
@@ -518,7 +521,7 @@ try {
     packageJsonUrl,
   )
   await ctx.loader.await()
-  const pluginEntry = [...ctx.loader.entries()].find(entry => entry.options.name === 'dsh-search-enhance')
+  const pluginEntry = [...ctx.loader.entries()].find(entry => entry.options.name === '@kkkneko/dsh-search-enhance')
   assert.ok(pluginEntry?.fiber, 'Loader did not create the search-enhance fiber')
   await pluginEntry.fiber.await()
   assert.deepEqual(ctx.tools.schemas().map(schema => schema.name).sort(), allGlobalToolNames)
@@ -624,7 +627,7 @@ try {
     ['query', 'profile', 'depth'],
   )
   const initiallyHidden = await ctx.tools.execute({
-    callId: CallId('initially-hidden-web-map'),
+    callId: ToolCallId('initially-hidden-web-map'),
     name: 'web_map',
     arguments: { url: origin },
     agent: nativeFull,
@@ -788,7 +791,7 @@ try {
   await followup(nativeEmpty, 'Run the empty native search fixture.')
   const codeAgent = await createAgent(
     'code-session',
-    agentCtx => { agentCtx.tools.presentAs('code') },
+    agentCtx => { agentCtx.tools.presentAs('ptc') },
   )
   await followup(codeAgent, 'Verify that source auto-disclosure changes capability state without changing the Code SDK.')
 
@@ -813,7 +816,7 @@ try {
   )
   assert.equal(ctx.tools.get('web_search', hiddenWebSearchAgent), undefined)
   const hiddenNativeSearch = await ctx.tools.execute({
-    callId: CallId('hidden-native-web-search'),
+    callId: ToolCallId('hidden-native-web-search'),
     name: 'web_search',
     arguments: { query: 'must stay hidden' },
     agent: hiddenWebSearchAgent,
@@ -821,7 +824,7 @@ try {
   })
   assert.equal(hiddenNativeSearch.error?.info?.code, 'UNKNOWN_TOOL')
   const independentFetch = await ctx.tools.execute({
-    callId: CallId('independent-web-fetch'),
+    callId: ToolCallId('independent-web-fetch'),
     name: 'web_fetch',
     arguments: { url: 'https://example.test/official-fetch' },
     agent: hiddenWebSearchAgent,
@@ -865,7 +868,7 @@ try {
   assert.equal(presetActivation.result.isError, false)
   assert.equal(ctx.tools.get('web_map', presetAgent), undefined)
   const presetHidden = await ctx.tools.execute({
-    callId: CallId('preset-hidden-web-map'),
+    callId: ToolCallId('preset-hidden-web-map'),
     name: 'search_call',
     arguments: { operation: 'web_map', arguments: { url: 'https://example.test' } },
     agent: presetAgent,
@@ -916,7 +919,7 @@ try {
 
   const codePolicyCalls = []
   const codeMapAgent = await createAgent('code-progressive-session', agentCtx => {
-    agentCtx.tools.presentAs('code')
+    agentCtx.tools.presentAs('ptc')
     agentCtx.on('tools/pre-execute', async (exec, next) => {
       codePolicyCalls.push({ name: exec.name, nested: exec.parent !== undefined })
       return next()
@@ -958,14 +961,14 @@ try {
 
   const codeCancelAgent = await createAgent(
     'code-cancel-session',
-    agentCtx => { agentCtx.tools.presentAs('code') },
+    agentCtx => { agentCtx.tools.presentAs('ptc') },
   )
   const codeSlowBefore = slowSearchRequests
   await codeCancelAgent.followup('Cancel a Code Mode nested Provider request.')
   await waitFor(() => slowSearchRequests === codeSlowBefore + 1, 'Code cancellation request')
   codeCancelAgent.cancel({ kind: 'user' })
   await codeCancelAgent.whenIdle()
-  const cancelledDispatch = codeCancelAgent.session.events.find(
+  const cancelledDispatch = codeCancelAgent.session.snapshotEvents().find(
     event => event.type === 'tool/code-dispatch' && event.data.name === 'web_search',
   )
   assert.ok(cancelledDispatch?.type === 'tool/code-dispatch')
@@ -1006,7 +1009,7 @@ try {
     ['native-invalid-limit', { source_ref: fullSourceRef, limit: 21 }],
   ]) {
     const invalid = await ctx.tools.execute({
-      callId: CallId(callId),
+      callId: ToolCallId(callId),
       name: 'search_call',
       arguments: { operation: 'search_sources', arguments: argumentsValue },
       agent: nativeFull,
@@ -1019,8 +1022,8 @@ try {
     )
   }
 
-  const fullCallEvent = nativeFull.session.events.find(event => event.type === 'tool/call' && String(event.data.callId) === 'native-full-call')
-  const fullResultEvent = nativeFull.session.events.find(event => event.type === 'tool/result' && String(event.data.message.content[0]?.toolCallId) === 'native-full-call')
+  const fullCallEvent = nativeFull.session.snapshotEvents().find(event => event.type === 'tool/call' && String(event.data.callId) === 'native-full-call')
+  const fullResultEvent = nativeFull.session.snapshotEvents().find(event => event.type === 'tool/result' && String(event.data.message.content[0]?.toolCallId) === 'native-full-call')
   assert.ok(fullCallEvent && fullCallEvent.type === 'tool/call')
   assert.ok(fullResultEvent && fullResultEvent.type === 'tool/result')
   const fullDefinition = ctx.tools.get('web_search', nativeFull)
@@ -1048,10 +1051,10 @@ try {
   })
   assert.equal(fullResultEvent.data.meta.sources.some(source => source.title === '[1]'), false)
 
-  const searchToolsCallEvent = progressiveAgent.session.events.find(
+  const searchToolsCallEvent = progressiveAgent.session.snapshotEvents().find(
     event => event.type === 'tool/call' && String(event.data.callId) === 'native-repeat-activation',
   )
-  const searchToolsResultEvent = progressiveAgent.session.events.find(
+  const searchToolsResultEvent = progressiveAgent.session.snapshotEvents().find(
     event => event.type === 'tool/result'
       && String(event.data.message.content[0]?.toolCallId) === 'native-repeat-activation',
   )
@@ -1118,7 +1121,7 @@ try {
   assert.equal(firstCodeResult.result.value.result.search_call_binding, 'function')
   assert.equal(firstCodeResult.result.value.result.early, 'inactive')
   assert.equal(nextCodeResult.result.value.result.search_call_binding, 'function')
-  const codeDispatches = codeAgent.session.events.filter(event => event.type === 'tool/code-dispatch')
+  const codeDispatches = codeAgent.session.snapshotEvents().filter(event => event.type === 'tool/code-dispatch')
   assert.deepEqual(
     codeDispatches.map(event => event.data.name),
     ['web_search', 'search_call', 'web_search', 'search_call'],
@@ -1135,7 +1138,7 @@ try {
   let storedCount = Object.keys(storageDocument.tables.records).length
   while (storedCount < 6) {
     const fill = await ctx.tools.execute({
-      callId: CallId(`capacity-fill-${storedCount}`),
+      callId: ToolCallId(`capacity-fill-${storedCount}`),
       name: 'web_search',
       arguments: { query: `capacity fill ${storedCount}`, profile: 'auto', depth: 'compact' },
       agent: nativeFull,
@@ -1147,7 +1150,7 @@ try {
   }
   assert.equal(storedCount, 6)
   const capacityResult = await ctx.tools.execute({
-    callId: CallId('capacity-failure-direct'),
+    callId: ToolCallId('capacity-failure-direct'),
     name: 'web_search',
     arguments: { query: 'capacity full fixture', profile: 'auto', depth: 'compact' },
     agent: nativeFull,
@@ -1225,7 +1228,7 @@ try {
   assert.deepEqual(allModeView, expectedCoreTools)
   assert.equal(ctx.tools.get('web_map', presetAgent), undefined)
   const allModeMap = await ctx.tools.execute({
-    callId: CallId('all-mode-web-map'),
+    callId: ToolCallId('all-mode-web-map'),
     name: 'search_call',
     arguments: {
       operation: 'web_map',
@@ -1241,7 +1244,7 @@ try {
   assert.deepEqual(await assembledSurface(ctx, nativeEmpty), progressiveNativeSurface)
   assert.deepEqual(await assembledSurface(ctx, codeAgent), progressiveCodeSurface)
   const progressiveMap = await ctx.tools.execute({
-    callId: CallId('progressive-inactive-web-map'),
+    callId: ToolCallId('progressive-inactive-web-map'),
     name: 'search_call',
     arguments: {
       operation: 'web_map',
@@ -1274,7 +1277,7 @@ try {
 
   const codeSourceRef = codeEnhances[1].result.value.source_ref
   const postRestartPage = await ctx.tools.execute({
-    callId: CallId('post-restart-code'),
+    callId: ToolCallId('post-restart-code'),
     name: 'run_code',
     arguments: {
       code: `return await tools.search_call({ operation: 'search_sources', arguments: { source_ref: ${JSON.stringify(codeSourceRef)}, offset: 0, limit: 1, format: 'compact' } });`,
@@ -1397,7 +1400,7 @@ try {
   }
 
   await Promise.all(durabilityChecks)
-  const persistedSessions = ctx.agents.list().map(agent => agent.session.events)
+  const persistedSessions = ctx.agents.list().map(agent => agent.session.snapshotEvents())
   const sessionsAndStorage = `${JSON.stringify(persistedSessions)}\n${await readFile(storageFile, 'utf8')}`
   for (const secret of secrets) assert.equal(sessionsAndStorage.includes(secret), false)
   assert.equal(
@@ -1588,7 +1591,7 @@ try {
   }
   const runDefaultDepthSearch = async callId => {
     const result = await ctx.tools.execute({
-      callId: CallId(callId),
+      callId: ToolCallId(callId),
       name: 'web_search',
       arguments: { query: 'restart scoped config empty fixture' },
       agent: nativeFull,
@@ -1631,7 +1634,7 @@ try {
     ['web_fetch', { url: 'https://example.test/after-plugin-disposal' }],
   ]) {
     const result = await ctx.tools.execute({
-      callId: CallId(`post-dispose-${name}`),
+      callId: ToolCallId(`post-dispose-${name}`),
       name,
       arguments: argumentsValue,
       agent: nativeFull,

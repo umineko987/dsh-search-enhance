@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
-import { CallId, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { ToolCallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -14,7 +14,7 @@ const snapshotPath = join(packageRoot, 'tests/snapshots/docs-consumer.json')
 const packageJsonUrl = pathToFileURL(join(packageRoot, 'package.json')).href
 const dshHome = await mkdtemp(join(tmpdir(), 'dsh-search-enhance-docs-'))
 const loaderConfig = join(dshHome, 'cordis.yml')
-const selfLink = join(packageRoot, 'node_modules', 'dsh-search-enhance')
+const selfLink = join(packageRoot, 'node_modules', '@kkkneko/dsh-search-enhance')
 const context7Secret = 'docs-context7-secret-value'
 const exaSecret = 'docs-exa-secret-value'
 const candidateWindowQuery = 'React useEffect cleanup candidate-window documentation'
@@ -260,6 +260,7 @@ try {
     await lstat(selfLink)
   } catch (error) {
     if (error?.code !== 'ENOENT') throw error
+    await mkdir(dirname(selfLink), { recursive: true })
     await symlink(packageRoot, selfLink, 'junction')
     createdSelfLink = true
   }
@@ -277,6 +278,8 @@ try {
     backend: json
 - id: sessions
   name: '@deepseek-ai/dsh-session'
+- id: session-projections
+  name: '@deepseek-ai/dsh-session-projection'
 - id: system-prompt
   name: '@deepseek-ai/dsh-system-prompt'
 - id: tools
@@ -309,7 +312,7 @@ try {
   config:
     watch: false
 - id: search-enhance
-  name: dsh-search-enhance
+  name: '@kkkneko/dsh-search-enhance'
   config:
     toolDiscovery:
       mode: all
@@ -342,8 +345,8 @@ try {
   const [{ boot }, scriptedModule, documentationModule, sourceStorageModule] = await Promise.all([
     import('@deepseek-ai/dsh-app-boot'),
     import(pathToFileURL(fixturePath).href),
-    import('dsh-search-enhance/documentation'),
-    import('dsh-search-enhance/source-storage'),
+    import('@kkkneko/dsh-search-enhance/documentation'),
+    import('@kkkneko/dsh-search-enhance/source-storage'),
   ])
   const code = [
     "const docs = await tools.docs_search({ query: 'canonical equality docs', provider: 'exa', max_results: 2 });",
@@ -376,7 +379,7 @@ try {
     packageJsonUrl,
   )
   await ctx.loader.await()
-  const pluginEntry = [...ctx.loader.entries()].find(entry => entry.options.name === 'dsh-search-enhance')
+  const pluginEntry = [...ctx.loader.entries()].find(entry => entry.options.name === '@kkkneko/dsh-search-enhance')
   assert.ok(pluginEntry?.fiber, 'Loader did not create the search-enhance fiber')
   await pluginEntry.fiber.await()
   assert.deepEqual(ctx.tools.schemas().map(schema => schema.name), globalDefinitions)
@@ -451,7 +454,7 @@ try {
   await followup(nativeAgent, 'Run the native documentation fixture.')
   const codeAgent = await createAgent(
     'docs-code-session',
-    agentCtx => { agentCtx.tools.presentAs('code') },
+    agentCtx => { agentCtx.tools.presentAs('ptc') },
   )
   await followup(codeAgent, 'Run the Code Mode documentation fixture.')
   assert.equal(scriptedModule.remainingResponses(), 0)
@@ -494,10 +497,10 @@ try {
   assert.equal(codePage.result.value.source_ref, codeDocs.result.value.source_ref)
   assert.equal(codePage.result.value.state, 'found')
 
-  const nativeCallEvent = nativeAgent.session.events.find(event => (
+  const nativeCallEvent = nativeAgent.session.snapshotEvents().find(event => (
     event.type === 'tool/call' && String(event.data.callId) === 'native-docs-call'
   ))
-  const nativeResultEvent = nativeAgent.session.events.find(event => (
+  const nativeResultEvent = nativeAgent.session.snapshotEvents().find(event => (
     event.type === 'tool/result'
     && String(event.data.message.content[0]?.toolCallId) === 'native-docs-call'
   ))
@@ -522,7 +525,7 @@ try {
   async function executeDocs(argumentsValue, expectedError = false) {
     directCounter += 1
     const result = await ctx.tools.execute({
-      callId: CallId(`direct-docs-${directCounter}`),
+      callId: ToolCallId(`direct-docs-${directCounter}`),
       name: 'docs_search',
       arguments: argumentsValue,
       agent: nativeAgent,
@@ -535,7 +538,7 @@ try {
     directCounter += 1
     const gatewayArgs = { operation: 'search_sources', arguments: argumentsValue }
     const result = await ctx.tools.execute({
-      callId: CallId(`direct-sources-${directCounter}`),
+      callId: ToolCallId(`direct-sources-${directCounter}`),
       name: 'search_call',
       arguments: gatewayArgs,
       agent: nativeAgent,
@@ -548,7 +551,7 @@ try {
     directCounter += 1
     const gatewayArgs = { operation: name, arguments: argumentsValue }
     const result = await ctx.tools.execute({
-      callId: CallId(`direct-context7-${directCounter}`),
+      callId: ToolCallId(`direct-context7-${directCounter}`),
       name: 'search_call',
       arguments: gatewayArgs,
       agent: nativeAgent,
@@ -793,7 +796,7 @@ try {
   assert.equal(staleObserved.card?.card, 'web')
   assert.match(staleObserved.card?.title ?? '', /stale cache/)
 
-  const codeDispatches = codeAgent.session.events.filter(event => event.type === 'tool/code-dispatch')
+  const codeDispatches = codeAgent.session.snapshotEvents().filter(event => event.type === 'tool/code-dispatch')
   assert.deepEqual(codeDispatches.map(event => event.data.name), ['docs_search', 'search_call'])
   assert.ok(codeDispatches.every(event => !('meta' in event.data)))
 
@@ -892,8 +895,8 @@ try {
 
   const persistedText = `${await readFile(sourceStorageFile, 'utf8')}\n${await readFile(cacheStorageFile, 'utf8')}`
   const sessionAndOutputText = JSON.stringify({
-    nativeEvents: nativeAgent.session.events,
-    codeEvents: codeAgent.session.events,
+    nativeEvents: nativeAgent.session.snapshotEvents(),
+    codeEvents: codeAgent.session.snapshotEvents(),
     outputs: [...observed.map(item => item.result), ...Object.values(granularResults).map(item => item.result)],
   })
   for (const secret of [context7Secret, exaSecret]) {

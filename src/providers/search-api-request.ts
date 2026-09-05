@@ -1,4 +1,4 @@
-import { snapshotJsonValue, type JsonValue } from '@deepseek-ai/dsh-session'
+import { snapshotJsonValue, type JsonValue } from '@deepseek-ai/dsh-util-values'
 
 import {
   SEARCH_API_PROTOCOLS,

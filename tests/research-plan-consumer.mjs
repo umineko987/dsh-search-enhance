@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
-import { lstat, mkdtemp, readFile, readdir, rm, symlink, unlink, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
-import { CallId, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { ToolCallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)))
@@ -13,7 +13,7 @@ const snapshotPath = join(packageRoot, 'tests/snapshots/research-plan-consumer.j
 const packageJsonUrl = pathToFileURL(join(packageRoot, 'package.json')).href
 const dshHome = await mkdtemp(join(tmpdir(), 'dsh-search-enhance-research-plan-'))
 const loaderConfig = join(dshHome, 'cordis.yml')
-const selfLink = join(packageRoot, 'node_modules', 'dsh-search-enhance')
+const selfLink = join(packageRoot, 'node_modules', '@kkkneko/dsh-search-enhance')
 const secret = 'research-plan-loader-secret-value'
 const globalDefinitions = [
   'docs_search',
@@ -79,6 +79,8 @@ function loaderText() {
     backend: json
 - id: sessions
   name: '@deepseek-ai/dsh-session'
+- id: session-projections
+  name: '@deepseek-ai/dsh-session-projection'
 - id: system-prompt
   name: '@deepseek-ai/dsh-system-prompt'
 - id: tools
@@ -111,7 +113,7 @@ function loaderText() {
   config:
     watch: false
 - id: search-enhance
-  name: dsh-search-enhance
+  name: '@kkkneko/dsh-search-enhance'
   config:
     toolDiscovery:
       mode: all
@@ -135,7 +137,7 @@ function parseArguments(value) {
 }
 
 function eventSummary(session) {
-  return session.events.flatMap(event => {
+  return session.snapshotEvents().flatMap(event => {
     if (event.type === 'tool/call') {
       return [{
         type: event.type,
@@ -221,6 +223,7 @@ try {
     await lstat(selfLink)
   } catch (error) {
     if (error?.code !== 'ENOENT') throw error
+    await mkdir(dirname(selfLink), { recursive: true })
     await symlink(packageRoot, selfLink, 'junction')
     createdSelfLink = true
   }
@@ -239,7 +242,7 @@ try {
   )
   await ctx.loader.await()
   const pluginEntry = [...ctx.loader.entries()].find(
-    entry => entry.options.name === 'dsh-search-enhance',
+    entry => entry.options.name === '@kkkneko/dsh-search-enhance',
   )
   assert.ok(pluginEntry?.fiber, 'Loader did not create the research-plan fiber')
   await pluginEntry.fiber.await()
@@ -299,7 +302,7 @@ try {
   const codeHandle = await ctx.agents.create({
     sessionId: SessionId('research-plan-code-session'),
     agentOptions: { provider: 'search-enhance-scripted', model: 'fixture-model' },
-    setup: agentCtx => { agentCtx.tools.presentAs('code') },
+    setup: agentCtx => { agentCtx.tools.presentAs('ptc') },
   })
   handles.push(codeHandle)
   await followup(codeHandle.agent, 'Use Code Mode for the same offline research plan.')
@@ -319,10 +322,10 @@ try {
   assert.equal(nativeObserved.result.value.research_plan.preflight.network_access, 'not_used')
   assert.equal(nativeObserved.result.value.research_plan.evidence_policy, 'fetch_before_claim')
 
-  const nativeCallEvent = nativeHandle.agent.session.events.find(
+  const nativeCallEvent = nativeHandle.agent.session.snapshotEvents().find(
     event => event.type === 'tool/call' && String(event.data.callId) === 'native-plan-call',
   )
-  const nativeResultEvent = nativeHandle.agent.session.events.find(
+  const nativeResultEvent = nativeHandle.agent.session.snapshotEvents().find(
     event => event.type === 'tool/result'
       && String(event.data.message.content[0]?.toolCallId) === 'native-plan-call',
   )
@@ -369,7 +372,7 @@ try {
   assert.notEqual(ctx.tools.get('search_call'), oldDefinition)
   assert.equal(ctx.tools.schemas().filter(schema => schema.name === 'search_call').length, 1)
   const afterRestart = await ctx.tools.execute({
-    callId: CallId('research-plan-after-restart'),
+    callId: ToolCallId('research-plan-after-restart'),
     name: 'search_call',
     arguments: {
       operation: 'research_plan',
@@ -388,7 +391,7 @@ try {
   assert.deepEqual(names(ctx), globalDefinitions)
   assert.equal(ctx.tools.get('search_call')?.name, 'search_call')
   const compatibilityCall = await ctx.tools.execute({
-    callId: CallId('research-plan-compatibility-config'),
+    callId: ToolCallId('research-plan-compatibility-config'),
     name: 'search_call',
     arguments: {
       operation: 'research_plan',
@@ -400,8 +403,8 @@ try {
   assert.equal(compatibilityCall.isError, false)
 
   const sessionText = JSON.stringify([
-    nativeHandle.agent.session.events,
-    codeHandle.agent.session.events,
+    nativeHandle.agent.session.snapshotEvents(),
+    codeHandle.agent.session.snapshotEvents(),
     requests,
   ])
   assert.equal(sessionText.includes(secret), false)

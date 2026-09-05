@@ -1,7 +1,7 @@
 import { Buffer } from 'node:buffer'
 
 import {
-  CallId,
+  ToolCallId,
 } from '@deepseek-ai/dsh-llm'
 import {
   parameterSchemaSpecToJsonSchema,
@@ -53,8 +53,8 @@ function options(
 
 function runContext(args: unknown, signal = new AbortController().signal): ToolRunContext {
   return {
-    callId: CallId('research-plan-call'),
-    rootCallId: CallId('research-plan-call'),
+    callId: ToolCallId('research-plan-call'),
+    rootCallId: ToolCallId('research-plan-call'),
     name: 'research_plan',
     arguments: args,
     token: Symbol('research-plan') as never,

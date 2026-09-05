@@ -1,18 +1,18 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
-import { lstat, mkdtemp, readFile, rm, symlink, unlink, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, rm, symlink, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
-import { CallId, createToolResultMessage } from '@deepseek-ai/dsh-llm'
+import { ToolCallId, createToolResultMessage } from '@deepseek-ai/dsh-llm'
 
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)))
 const dshHome = await mkdtemp(join(tmpdir(), 'dsh-search-enhance-'))
 const exampleConfig = join(packageRoot, 'examples/headless/cordis.yml')
 const loaderConfig = join(dshHome, 'cordis.yml')
-const selfLink = join(packageRoot, 'node_modules', 'dsh-search-enhance')
+const selfLink = join(packageRoot, 'node_modules', '@kkkneko/dsh-search-enhance')
 const credentialNames = [
   'SEARCH_API_KEY',
   'CONTEXT7_API_KEY',
@@ -90,7 +90,7 @@ async function modelSurface(ctx, systemPromptModule, agent) {
 
 function appendDisclosure(session, capability, step) {
   session.append('step/start', { turn: 1, step })
-  const callId = CallId(`loader-disclosure-${step}`)
+  const callId = ToolCallId(`loader-disclosure-${step}`)
   const call = session.append('tool/call', {
     turn: 1,
     step,
@@ -112,7 +112,7 @@ function appendDisclosure(session, capability, step) {
 
 function appendSourceActivation(session, step) {
   session.append('step/start', { turn: 1, step })
-  const callId = CallId(`loader-source-${step}`)
+  const callId = ToolCallId(`loader-source-${step}`)
   const call = session.append('tool/call', {
     turn: 1,
     step,
@@ -145,14 +145,15 @@ try {
     await lstat(selfLink)
   } catch (error) {
     if (error?.code !== 'ENOENT') throw error
+    await mkdir(dirname(selfLink), { recursive: true })
     await symlink(packageRoot, selfLink, 'junction')
     createdSelfLink = true
   }
 
   const configuredExample = (await readFile(exampleConfig, 'utf8')).replace(
-    '- id: search-enhance\n  name: dsh-search-enhance',
+    "- id: search-enhance\n  name: '@kkkneko/dsh-search-enhance'",
     `- id: search-enhance
-  name: dsh-search-enhance
+  name: '@kkkneko/dsh-search-enhance'
   config:
     webExtract:
       smartDirect:
@@ -180,12 +181,12 @@ try {
     import('@deepseek-ai/dsh-app-boot'),
     import(pathToFileURL(join(packageRoot, 'lib/index.js')).href),
     import(pathToFileURL(join(packageRoot, 'lib/config.js')).href),
-    import('dsh-search-enhance/provider-runtime'),
-    import('dsh-search-enhance/search'),
-    import('dsh-search-enhance/providers/search-api'),
-    import('dsh-search-enhance/orchestration'),
-    import('dsh-search-enhance/documentation'),
-    import('dsh-search-enhance/source-storage'),
+    import('@kkkneko/dsh-search-enhance/provider-runtime'),
+    import('@kkkneko/dsh-search-enhance/search'),
+    import('@kkkneko/dsh-search-enhance/providers/search-api'),
+    import('@kkkneko/dsh-search-enhance/orchestration'),
+    import('@kkkneko/dsh-search-enhance/documentation'),
+    import('@kkkneko/dsh-search-enhance/source-storage'),
     import('@deepseek-ai/dsh-scope'),
     import('@deepseek-ai/dsh-session'),
     import('@deepseek-ai/dsh-system-prompt'),
@@ -218,7 +219,7 @@ try {
   assert.equal(ctx.loader.unwrapExports(pluginModule), pluginModule)
   await ctx.loader.await()
   const pluginEntry = [...ctx.loader.entries()].find(
-    (entry) => entry.options.name === 'dsh-search-enhance',
+    (entry) => entry.options.name === '@kkkneko/dsh-search-enhance',
   )
   assert.ok(pluginEntry?.fiber, 'Loader did not create the package fiber')
   await pluginEntry.fiber.await()
@@ -361,7 +362,7 @@ try {
     'web_search',
   ])
   const inactiveGateway = await ctx.tools.execute({
-    callId: CallId('loader-inactive-gateway'),
+    callId: ToolCallId('loader-inactive-gateway'),
     name: 'search_call',
     arguments: { operation: 'web_map', arguments: { url: 'https://example.test' } },
     agent: mutableAgent,
@@ -391,7 +392,7 @@ try {
     apply(pluginCtx) {
       codeScope = scopeModule.createScope(pluginCtx, codeAgent)
       codeAgent.ctx = codeScope.ctx
-      codeScope.ctx.tools.presentAs('code')
+      codeScope.ctx.tools.presentAs('ptc')
       pluginCtx.agents.register(codeAgent)
     },
   })
@@ -410,7 +411,7 @@ try {
 
   const recoveredSession = sessionModule.Session.create(
     sessionModule.SessionId('loader-recovered-agent'),
-    agentSession.events,
+    agentSession.snapshotEvents(),
   )
   const recoveredAgent = {
     id: recoveredSession.id,

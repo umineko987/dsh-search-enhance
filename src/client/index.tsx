@@ -1,7 +1,8 @@
 /** Browser half: Search Enhance configuration under Settings → Plugins. */
 
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 
@@ -36,8 +37,8 @@ export function apply(ctx: ClientContext): void {
   )
   ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({
     name: 'settings.plugin.item',
-    id: 'dsh-search-enhance',
-    order: 25,
+    // Keyed slots dispatch by the Host settings namespace, not the package name.
+    key: 'search-enhance',
     locale: SEARCH_ENHANCE_LOCALE_NAMESPACE,
   }, SearchEnhancePluginCard))
 }

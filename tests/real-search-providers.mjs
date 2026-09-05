@@ -200,7 +200,7 @@ async function runSearchApiProtocol(protocol) {
     }
     return provider.search(input)
   }, `Search API ${protocol}`)
-  assert.equal(cancelledSession.events.length, 0)
+  assert.equal(cancelledSession.snapshotEvents().length, 0)
 
   const session = Session.create(SessionId(`real-${protocol}`))
   let dispatches = 0
@@ -220,9 +220,9 @@ async function runSearchApiProtocol(protocol) {
   for (const source of result.sources) assertHttpUrl(source.url)
   assertSecretFree(result)
   assertNoSensitiveRequestKeys(result)
-  assert.equal(session.events.length, 0)
-  assert.equal(session.events.some(event => String(event.type).startsWith('search-enhance/')), false)
-  assertSecretFree(session.events)
+  assert.equal(session.snapshotEvents().length, 0)
+  assert.equal(session.snapshotEvents().some(event => String(event.type).startsWith('search-enhance/')), false)
+  assertSecretFree(session.snapshotEvents())
 }
 
 await runLane(

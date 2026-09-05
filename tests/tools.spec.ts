@@ -2,7 +2,7 @@ import { Buffer } from 'node:buffer'
 
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import {
-  CallId,
+  ToolCallId,
 } from '@deepseek-ai/dsh-llm'
 import {
   parameterSchemaSpecToJsonSchema,
@@ -202,7 +202,7 @@ function toolRunContext(
   args: unknown,
   parent?: symbol,
 ): ToolRunContext {
-  const id = CallId(callId)
+  const id = ToolCallId(callId)
   return {
     callId: id,
     rootCallId: id,

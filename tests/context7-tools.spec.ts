@@ -6,7 +6,7 @@ import type {
   CredentialRef,
   ResolvedCredential,
 } from '@deepseek-ai/dsh-credentials'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { ToolRuntime, type ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import { SystemPrompt } from '@deepseek-ai/dsh-system-prompt'
@@ -265,7 +265,7 @@ async function execute(
 ): Promise<ToolExecutionResult> {
   callCounter += 1
   return test.runtime.execute({
-    callId: CallId(`context7-tool-${callCounter}`),
+    callId: ToolCallId(`context7-tool-${callCounter}`),
     name,
     arguments: args,
     ...(options.nested ? { parent: Symbol('code-parent') as never } : {}),

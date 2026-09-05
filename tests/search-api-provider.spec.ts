@@ -73,7 +73,7 @@ function session(): Session {
 }
 
 function pluginEvents(value: Session) {
-  return value.events.filter(event => String(event.type).startsWith('search-enhance/'))
+  return value.snapshotEvents().filter(event => String(event.type).startsWith('search-enhance/'))
 }
 
 interface ProviderFixtureOptions {
@@ -174,7 +174,7 @@ Sources:
     expect(resolveCredential).toHaveBeenCalledTimes(1)
     expect(legacyFlush).not.toHaveBeenCalled()
     expect(pluginEvents(operationSession)).toHaveLength(0)
-    expect(operationSession.events).toHaveLength(0)
+    expect(operationSession.snapshotEvents()).toHaveLength(0)
     expect(requests).toHaveLength(2)
     for (const request of requests) {
       expect(request.init?.redirect).toBe('manual')
@@ -183,7 +183,7 @@ Sources:
     const dispatchedBody = JSON.parse(String(requests[1]?.init?.body)) as Record<string, unknown>
     expect(dispatchedBody).toMatchObject({ model: 'model-a', stream: true })
     expect(JSON.stringify(dispatchedBody)).toContain('# Search Profile: Fact Check')
-    expect(JSON.stringify(operationSession.events)).not.toContain('secret-a')
+    expect(JSON.stringify(operationSession.snapshotEvents())).not.toContain('secret-a')
   })
 
   it('uses the Provider collection cap while preserving answer-cited sources', async () => {
@@ -397,7 +397,7 @@ Sources:
     }
     await expect(fixture.provider.search(legacyInput)).rejects.toMatchObject({ kind })
     expect(pluginEvents(operationSession)).toHaveLength(0)
-    expect(operationSession.events).toHaveLength(0)
+    expect(operationSession.snapshotEvents()).toHaveLength(0)
   })
 })
 

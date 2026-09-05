@@ -8,7 +8,7 @@ import {
   SessionId,
 } from '@deepseek-ai/dsh-session'
 import {
-  CallId,
+  ToolCallId,
   createUserMessage,
 } from '@deepseek-ai/dsh-llm'
 
@@ -119,8 +119,8 @@ async function followup(agent, text) {
 const [{ boot }, scriptedModule, sourceStorageModule, documentationModule] = await Promise.all([
   import('@deepseek-ai/dsh-app-boot'),
   import(pathToFileURL(fixturePath).href),
-  import('dsh-search-enhance/source-storage'),
-  import('dsh-search-enhance/documentation'),
+  import('@kkkneko/dsh-search-enhance/source-storage'),
+  import('@kkkneko/dsh-search-enhance/documentation'),
 ])
 
 let ctx
@@ -232,7 +232,7 @@ try {
     assert.deepEqual(pluginToolsFor(handle.agent), coreTools)
 
     await followup(handle.agent, 'Activate Context7 before the fork boundary.')
-    const forkBoundaryEvent = handle.agent.session.events.at(-1)
+    const forkBoundaryEvent = handle.agent.session.snapshotEvents().at(-1)
     assert.equal(forkBoundaryEvent?.type, 'turn/end')
     const forkBoundary = forkBoundaryEvent.seq
     assert.deepEqual(pluginToolsFor(handle.agent), coreTools)
@@ -263,7 +263,7 @@ try {
     const raw = await ctx.sessionPersistence.readRaw(sessionId)
     assert.ok(raw, 'JSONL session artifact was not materialized')
 
-    const events = handle.agent.session.events
+    const events = handle.agent.session.snapshotEvents()
     assertContinuous(events)
     assertSupported(events)
     assertNoPluginEvents(events)
@@ -375,17 +375,17 @@ try {
     handles.push(handle)
     await handle.agent.whenIdle()
     assert.ok(
-      handle.agent.session.events.length >= inspection.events.length,
+      handle.agent.session.snapshotEvents().length >= inspection.events.length,
       'resumed Session lost persisted events',
     )
     assert.deepEqual(
-      handle.agent.session.events.slice(0, inspection.events.length),
+      handle.agent.session.snapshotEvents().slice(0, inspection.events.length),
       inspection.events,
       'resume did not preserve the loaded JSONL prefix',
     )
-    assertContinuous(handle.agent.session.events)
-    assertSupported(handle.agent.session.events)
-    assertNoPluginEvents(handle.agent.session.events)
+    assertContinuous(handle.agent.session.snapshotEvents())
+    assertSupported(handle.agent.session.snapshotEvents())
+    assertNoPluginEvents(handle.agent.session.snapshotEvents())
 
     const recoveredTools = coreTools
     const recoveredBeforeRequest = pluginToolsFor(handle.agent)
@@ -395,7 +395,7 @@ try {
     assert.deepEqual(firstRequestTools, recoveredTools)
 
     const page = await ctx.tools.execute({
-      callId: CallId('fresh-process-page-call'),
+      callId: ToolCallId('fresh-process-page-call'),
       name: 'search_call',
       arguments: {
         operation: 'search_sources',
@@ -416,7 +416,7 @@ try {
     assert.match(page.value.sources[0]?.url ?? '', /\/evidence\/primary$/)
 
     const cached = await ctx.tools.execute({
-      callId: CallId('fresh-process-context7-cache-read'),
+      callId: ToolCallId('fresh-process-context7-cache-read'),
       name: 'search_call',
       arguments: {
         operation: 'context7_get_cached_doc_raw',
@@ -465,19 +465,19 @@ try {
       const forkFiber = ctx.plugin(forkPlugin)
       await forkFiber.await()
       assert.ok(forked, 'public sessions.fork did not return a Session')
-      assert.equal(forked.header.seedLength, state.forkBoundary + 1)
+      assert.equal(forked.inheritedEventCount, state.forkBoundary + 1)
       assert.equal(String(forked.header.parentSession), String(sessionId))
-      const seed = structuredClone(forked.events.slice(0, forked.header.seedLength))
-      const endSeed = forked.events[forked.header.seedLength]
+      const seed = structuredClone(forked.snapshotEvents().slice(0, forked.inheritedEventCount))
+      const endSeed = forked.snapshotEvents()[forked.inheritedEventCount]
       assert.equal(endSeed?.type, 'session/end-seed')
-      assertContinuous(forked.events)
-      assertSupported(forked.events)
-      assertNoPluginEvents(forked.events)
+      assertContinuous(forked.snapshotEvents())
+      assertSupported(forked.snapshotEvents())
+      assertNoPluginEvents(forked.snapshotEvents())
       publicForks.push({
         boundary: state.forkBoundary,
-        seed_length: forked.header.seedLength,
+        seed_length: forked.inheritedEventCount,
         marker: endSeed.type,
-        event_types: [...new Set(forked.events.map(event => String(event.type)))],
+        event_types: [...new Set(forked.snapshotEvents().map(event => String(event.type)))],
       })
       await forkFiber.dispose()
       assert.equal(ctx.sessions.get(seedSessionId), undefined)
@@ -485,14 +485,15 @@ try {
       const childHandle = await ctx.agents.create({
         sessionId: SessionId(id),
         seed,
+        inheritedEventCount: seed.length,
         meta: {
           parentSession: sessionId,
-          seedLength: seed.length,
+          isSeeded: true,
         },
         agentOptions: { provider: 'search-enhance-scripted', model: 'fixture-model' },
       })
       handles.push(childHandle)
-      assert.equal(childHandle.agent.session.header.seedLength, seed.length)
+      assert.equal(childHandle.agent.session.inheritedEventCount, seed.length)
       assert.equal(String(childHandle.agent.session.header.parentSession), String(sessionId))
       return childHandle.agent
     }
@@ -512,7 +513,7 @@ try {
 
     let operationCall = 0
     const callOperation = (agent, operation, argumentsValue) => ctx.tools.execute({
-      callId: CallId(`recovery-operation-${++operationCall}`),
+      callId: ToolCallId(`recovery-operation-${++operationCall}`),
       name: 'search_call',
       arguments: { operation, arguments: argumentsValue },
       agent,
@@ -589,9 +590,9 @@ try {
     assert.equal(scriptedModule.remainingResponses(), 0)
 
     for (const agent of ctx.agents.list()) {
-      assertContinuous(agent.session.events)
-      assertSupported(agent.session.events)
-      assertNoPluginEvents(agent.session.events)
+      assertContinuous(agent.session.snapshotEvents())
+      assertSupported(agent.session.snapshotEvents())
+      assertNoPluginEvents(agent.session.snapshotEvents())
     }
 
     await ctx.sessions.flush(handle.agent.session)
@@ -605,10 +606,10 @@ try {
       pid: process.pid,
       loaded_event_count: inspection.events.length,
       loaded_event_types: [...new Set(inspection.events.map(event => String(event.type)))],
-      resumed_event_count: handle.agent.session.events.length,
-      resumed_event_types: [...new Set(handle.agent.session.events.map(event => String(event.type)))],
+      resumed_event_count: handle.agent.session.snapshotEvents().length,
+      resumed_event_types: [...new Set(handle.agent.session.snapshotEvents().map(event => String(event.type)))],
       custom_event_types: ctx.agents.list()
-        .flatMap(agent => agent.session.events.map(event => String(event.type)))
+        .flatMap(agent => agent.session.snapshotEvents().map(event => String(event.type)))
         .filter(type => type.startsWith('search-enhance/')),
       session_format_unsupported_error: false,
       sequences_contiguous: true,

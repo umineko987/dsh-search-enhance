@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
@@ -19,7 +19,7 @@ const noopPath = join(packageRoot, 'tests/fixtures/noop.mjs')
 const dshHome = await mkdtemp(join(tmpdir(), 'dsh-search-enhance-presets-'))
 const presetRoot = join(dshHome, 'agent-presets')
 const loaderConfig = join(dshHome, 'cordis.yml')
-const selfLink = join(packageRoot, 'node_modules', 'dsh-search-enhance')
+const selfLink = join(packageRoot, 'node_modules', '@kkkneko/dsh-search-enhance')
 const previousDshHome = process.env.DSH_HOME
 const previousSearchKey = process.env.SEARCH_API_KEY
 const sockets = new Set()
@@ -79,11 +79,11 @@ async function writePreset(id, rows) {
 }
 
 await Promise.all([
-  writePreset('standard', [
+  writePreset('fixture-standard', [
     '- id: native-web-search',
     `  name: ${JSON.stringify(nativeWebSearchPath)}`,
   ]),
-  writePreset('code', [
+  writePreset('fixture-code', [
     '- id: native-web-search',
     `  name: ${JSON.stringify(nativeWebSearchPath)}`,
     '- id: code-presentation',
@@ -112,6 +112,7 @@ try {
     await lstat(selfLink)
   } catch (error) {
     if (error?.code !== 'ENOENT') throw error
+    await mkdir(dirname(selfLink), { recursive: true })
     await symlink(packageRoot, selfLink, 'junction')
     createdSelfLink = true
   }
@@ -129,6 +130,8 @@ try {
     backend: json
 - id: sessions
   name: '@deepseek-ai/dsh-session'
+- id: session-projections
+  name: '@deepseek-ai/dsh-session-projection'
 - id: system-prompt
   name: '@deepseek-ai/dsh-system-prompt'
 - id: tools
@@ -163,13 +166,13 @@ try {
 - id: agent-presets
   name: '@deepseek-ai/dsh-agent-presets'
   config:
-    default: standard
+    default: fixture-standard
     includeUserRoot: false
     roots:
       - path: ${JSON.stringify(presetRoot)}
         trust: system
 - id: search-enhance
-  name: dsh-search-enhance
+  name: '@kkkneko/dsh-search-enhance'
   config:
     fallbackMode: off
     searchApi:
@@ -200,7 +203,7 @@ try {
     packageJsonUrl,
   )
   await ctx.loader.await()
-  const pluginEntry = [...ctx.loader.entries()].find(entry => entry.options.name === 'dsh-search-enhance')
+  const pluginEntry = [...ctx.loader.entries()].find(entry => entry.options.name === '@kkkneko/dsh-search-enhance')
   assert.ok(pluginEntry?.fiber, 'Loader did not create the search-enhance fiber')
   await pluginEntry.fiber.await()
 
@@ -218,7 +221,7 @@ try {
   assert.equal(ctx.tools.get('web_search', missingAgent), undefined)
   assert.equal(ctx.tools.schemas(missingAgent).some(schema => schema.name === 'web_search'), false)
   const missingResult = await ctx.tools.execute({
-    callId: CallId('missing-web-search'),
+    callId: ToolCallId('missing-web-search'),
     name: 'web_search',
     arguments: { query: 'must remain absent' },
     agent: missingAgent,
@@ -227,10 +230,10 @@ try {
   assert.equal(missingResult.error?.info?.code, 'UNKNOWN_TOOL')
   await handles.pop().dispose()
 
-  const standardAgent = await createAgent('preset-standard-session', 'standard')
-  const codeAgent = await createAgent('preset-code-session', 'code')
-  const standardPresetKey = await ctx.agentPresets.standingKeyFor('standard')
-  const codePresetKey = await ctx.agentPresets.standingKeyFor('code')
+  const standardAgent = await createAgent('preset-standard-session', 'fixture-standard')
+  const codeAgent = await createAgent('preset-code-session', 'fixture-code')
+  const standardPresetKey = await ctx.agentPresets.standingKeyFor('fixture-standard')
+  const codePresetKey = await ctx.agentPresets.standingKeyFor('fixture-code')
   const standardNativeDefinition = ctx.tools.get('web_search', standardPresetKey)
   const codeNativeDefinition = ctx.tools.get('web_search', codePresetKey)
   assert.ok(standardNativeDefinition)
@@ -251,7 +254,7 @@ try {
   assert.equal(ctx.tools.get('web_search', hiddenAgent), undefined)
   assert.equal(ctx.tools.schemas(hiddenAgent).some(schema => schema.name === 'web_search'), false)
   const hiddenResult = await ctx.tools.execute({
-    callId: CallId('hidden-web-search'),
+    callId: ToolCallId('hidden-web-search'),
     name: 'web_search',
     arguments: { query: 'must remain hidden' },
     agent: hiddenAgent,
@@ -272,7 +275,7 @@ try {
   assert.notEqual(ctx.tools.get('web_search', codeAgent), codeNativeDefinition)
 
   const standardResult = await ctx.tools.execute({
-    callId: CallId('standard-rich-web-search'),
+    callId: ToolCallId('standard-rich-web-search'),
     name: 'web_search',
     arguments: { query: 'standard preset shadow', profile: 'auto', depth: 'compact' },
     agent: standardAgent,
@@ -297,7 +300,7 @@ try {
   assert.match(codePrompt, /profile\?: "auto"/)
   assert.match(codePrompt, /depth\?: "compact"/)
   const codeResult = await ctx.tools.execute({
-    callId: CallId('code-rich-web-search'),
+    callId: ToolCallId('code-rich-web-search'),
     name: 'run_code',
     arguments: {
       code: "return await tools.web_search({ query: 'code preset shadow', profile: 'fact_check', depth: 'compact' });",
@@ -327,7 +330,7 @@ try {
   assert.equal(ctx.tools.get('web_search', codeAgent), codeNativeDefinition)
   assert.equal(ctx.tools.get('web_search', hiddenAgent), undefined)
   const restoredNative = await ctx.tools.execute({
-    callId: CallId('restored-native-web-search'),
+    callId: ToolCallId('restored-native-web-search'),
     name: 'web_search',
     arguments: { query: 'restored after plugin disposal' },
     agent: standardAgent,

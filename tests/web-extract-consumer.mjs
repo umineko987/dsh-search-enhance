@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
-import { CallId, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { ToolCallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import ts from 'typescript'
 
@@ -24,7 +24,7 @@ const fixturePath = join(packageRoot, 'tests/fixtures/scripted-llm.mjs')
 const webFetchFixturePath = join(packageRoot, 'tests/fixtures/web-fetch-stub.mjs')
 const snapshotPath = join(packageRoot, 'tests/snapshots/web-extract-consumer.json')
 const packageJsonUrl = pathToFileURL(join(packageRoot, 'package.json')).href
-const selfLink = join(packageRoot, 'node_modules', 'dsh-search-enhance')
+const selfLink = join(packageRoot, 'node_modules', '@kkkneko/dsh-search-enhance')
 const tavilySecret = 'web-extract-tavily-secret-value'
 const firecrawlSecret = 'web-extract-firecrawl-secret-value'
 const credentialNames = ['SEARCH_API_KEY', 'CONTEXT7_API_KEY', 'EXA_API_KEY', 'TAVILY_API_KEY', 'FIRECRAWL_API_KEY']
@@ -284,6 +284,8 @@ function loaderYaml(dshHome, withWebFetch, withSpill) {
     backend: json
 - id: sessions
   name: '@deepseek-ai/dsh-session'
+- id: session-projections
+  name: '@deepseek-ai/dsh-session-projection'
 - id: session-persistence
   name: '@deepseek-ai/dsh-session-persistence-jsonl'
   config:
@@ -323,7 +325,7 @@ ${optionalWebFetch}${optionalSpill}- id: code-runtime
   config:
     watch: false
 - id: search-enhance
-  name: dsh-search-enhance
+  name: '@kkkneko/dsh-search-enhance'
   config:
     fallbackMode: off
     providers:
@@ -372,7 +374,7 @@ async function followup(agent, text) {
 }
 
 function toolResultEvent(session, callId) {
-  const event = session.events.find(candidate => (
+  const event = session.snapshotEvents().find(candidate => (
     candidate.type === 'tool/result'
     && String(candidate.data.message.content[0]?.toolCallId) === callId
   ))
@@ -381,7 +383,7 @@ function toolResultEvent(session, callId) {
 }
 
 function toolCallEvent(session, callId) {
-  const event = session.events.find(candidate => (
+  const event = session.snapshotEvents().find(candidate => (
     candidate.type === 'tool/call' && String(candidate.data.callId) === callId
   ))
   assert.ok(event && event.type === 'tool/call', `missing tool/call ${callId}`)
@@ -478,7 +480,7 @@ async function runComposition({ withWebFetch, withSpill, full }) {
       packageJsonUrl,
     )
     await ctx.loader.await()
-    const pluginEntry = [...ctx.loader.entries()].find(entry => entry.options.name === 'dsh-search-enhance')
+    const pluginEntry = [...ctx.loader.entries()].find(entry => entry.options.name === '@kkkneko/dsh-search-enhance')
     assert.ok(pluginEntry?.fiber, 'Loader did not create web-extract plugin fiber')
     await pluginEntry.fiber.await()
 
@@ -524,7 +526,7 @@ async function runComposition({ withWebFetch, withSpill, full }) {
     let codeAgent
     if (full) {
       codeAgent = await createAgent('web-extract-code-stub', agentCtx => {
-        agentCtx.tools.presentAs('code')
+        agentCtx.tools.presentAs('ptc')
       })
       await followup(codeAgent, 'Run the Code Mode spill fixture.')
     }
@@ -632,7 +634,7 @@ async function runComposition({ withWebFetch, withSpill, full }) {
       )
       assert.match(modelText(outerCode.result), /Full formatted result stored at:/)
 
-      const codeDispatches = codeAgent.session.events.filter(event => event.type === 'tool/code-dispatch')
+      const codeDispatches = codeAgent.session.snapshotEvents().filter(event => event.type === 'tool/code-dispatch')
       assert.equal(codeDispatches.length, 1)
       assert.equal(codeDispatches[0].data.name, 'web_extract')
       assert.match(codeDispatches[0].data.content[0].text, /Full formatted result stored at:/)
@@ -673,8 +675,8 @@ async function runComposition({ withWebFetch, withSpill, full }) {
       const [nativeHandle] = handles.splice(nativeHandleIndex, 1)
       await nativeHandle.dispose()
       const loaded = await ctx.sessionPersistence.load(nativeSessionId)
-      const replayCall = toolCallEvent({ events: loaded.events }, 'native-smart')
-      const replayResult = toolResultEvent({ events: loaded.events }, 'native-smart')
+      const replayCall = toolCallEvent({ snapshotEvents: () => loaded.events }, 'native-smart')
+      const replayResult = toolResultEvent({ snapshotEvents: () => loaded.events }, 'native-smart')
       const diskReplayCard = definition.presentResult(
         JSON.parse(replayCall.data.arguments),
         {
@@ -691,7 +693,7 @@ async function runComposition({ withWebFetch, withSpill, full }) {
       assert.equal(ctx.tools.schemas().filter(schema => schema.name === 'web_extract').length, 1)
       assert.equal(ctx.tools.get('web_fetch') !== undefined, withWebFetch)
       const postRestart = await ctx.tools.execute({
-        callId: CallId('post-restart-direct-json'),
+        callId: ToolCallId('post-restart-direct-json'),
         name: 'web_extract',
         arguments: { url: directJsonUrl, format: 'json' },
         signal: new AbortController().signal,
@@ -710,7 +712,7 @@ async function runComposition({ withWebFetch, withSpill, full }) {
       const eventExcerpt = [
         toolCallEvent(nativeAgent.session, 'native-spill'),
         toolResultEvent(nativeAgent.session, 'native-spill'),
-        ...codeAgent.session.events.filter(event => [
+        ...codeAgent.session.snapshotEvents().filter(event => [
           'tool/call',
           'tool/code-dispatch-start',
           'tool/code-dispatch',
@@ -801,7 +803,7 @@ async function runComposition({ withWebFetch, withSpill, full }) {
     const allVisibleText = JSON.stringify({
       observed,
       cards,
-      sessions: handles.map(handle => handle.agent.session.events),
+      sessions: handles.map(handle => handle.agent.session.snapshotEvents()),
       fullSnapshot,
     })
     for (const secret of [tavilySecret, firecrawlSecret]) assert.equal(allVisibleText.includes(secret), false)
@@ -842,6 +844,7 @@ try {
     await lstat(selfLink)
   } catch (error) {
     if (error?.code !== 'ENOENT') throw error
+    await mkdir(dirname(selfLink), { recursive: true })
     await symlink(packageRoot, selfLink, 'junction')
     createdSelfLink = true
   }

@@ -2,6 +2,7 @@ import { Context } from '@deepseek-ai/cordis'
 import {
   SESSION_FORMAT_VERSION,
   SessionId,
+  SessionLogOffset,
   SessionStore,
   type SessionEvent,
 } from '@deepseek-ai/dsh-session'
@@ -23,6 +24,7 @@ function storedPrefix(): StoredPrefix {
       version: SESSION_FORMAT_VERSION,
       id,
       createdAt: 0,
+      isSeeded: false,
     },
     events: [{
       type: 'search-enhance/unknown-required-fixture',
@@ -30,6 +32,7 @@ function storedPrefix(): StoredPrefix {
       time: 0,
       data: {},
     } as unknown as SessionEvent],
+    inheritedEventCount: SessionLogOffset(0),
     revision,
   }
 }

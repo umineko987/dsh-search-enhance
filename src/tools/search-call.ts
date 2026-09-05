@@ -1,5 +1,5 @@
-import { deepFreeze, HarnessError } from '@deepseek-ai/dsh-llm'
-import { snapshotJsonValue } from '@deepseek-ai/dsh-session'
+import { HarnessError } from '@deepseek-ai/dsh-llm'
+import { deepFreeze, snapshotJsonValue, type JsonValue } from '@deepseek-ai/dsh-util-values'
 import {
   ToolArgsError,
   ToolOutputError,
@@ -8,7 +8,6 @@ import {
   defineTool,
   parameterSchemaSpecToJsonSchema,
   validateJsonSchemaValue,
-  type JsonValue,
   type ToolCallView,
   type ToolDefinition,
   type ToolResult,
@@ -410,7 +409,7 @@ function assertSearchCallArguments(args: SearchCallArgs): SearchCallArgs {
 function activeGroups(mode: ToolDiscoveryMode, exec: ToolRunContext): readonly CapabilityGroup[] {
   if (mode === 'all') return CAPABILITY_GROUPS
   if (exec.agent === undefined) throw new Error('search_call requires a live Agent session')
-  return foldEffectiveToolDisclosureEvents(exec.agent.session.events).activeGroups
+  return foldEffectiveToolDisclosureEvents(exec.agent.session.snapshotEvents()).activeGroups
 }
 
 function searchCallResultView(args: SearchCallArgs, result: ToolResult): ToolResultView {
