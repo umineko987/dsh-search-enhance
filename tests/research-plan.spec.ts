@@ -90,6 +90,32 @@ const baseArgs = {
 }
 
 describe('research_plan schema and deterministic planner', () => {
+  it.each([true, false])('keeps planned extraction within user selections (direct enabled: %s)', async (enabled) => {
+    const value = config()
+    const { operations, tool } = toolWith({
+      ...value,
+      webExtract: {
+        ...value.webExtract,
+        tavily: { ...value.webExtract.tavily, enabled: false },
+        firecrawl: { ...value.webExtract.firecrawl, enabled: false },
+        smartDirect: { ...value.webExtract.smartDirect, enabled: false },
+        direct: { ...value.webExtract.direct, enabled },
+      },
+    })
+    const args = { question: 'Read the selected page', known_urls: ['https://example.test/article'] }
+    try {
+      const result = await tool.execute(args, runContext(args)) as ResearchPlanOutput
+      const params = result.research_plan.steps[0]?.params
+      if (enabled) expect(params).toMatchObject({ provider: 'direct' })
+      else {
+        expect(params).not.toHaveProperty('provider')
+        expect(result.research_plan.preflight.gaps.join('\n')).toContain('user-enabled extraction provider')
+      }
+    } finally {
+      await operations.stop()
+    }
+  })
+
   it('exposes only bounded task intent and actual Search Enhance operations', () => {
     const schema = parameterSchemaSpecToJsonSchema(RESEARCH_PLAN_PARAMETERS)
     expect(Object.keys(schema.properties)).toEqual([

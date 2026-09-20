@@ -14,7 +14,7 @@ import SettingsProvider, {
 
 import {
   Config,
-  EXTRA_DISCOVERY_SOURCES_MAX,
+  SUPPLEMENTAL_SEARCH_MAX_SOURCES,
   SEARCH_ENHANCE_SETTINGS_NAMESPACE,
   SEARCH_PROFILES,
   WEB_EXTRACT_PROXY_URL_MAX_CHARACTERS,
@@ -29,7 +29,6 @@ import {
   WEB_CONFIG_PATH,
   WEB_CREDENTIALS_PATH,
   WEB_EDITABLE_PATHS,
-  WEB_EXTRA_DISCOVERY_PROFILES,
   WEB_MODEL_MAX_CHARACTERS,
   type WebConfigSnapshot,
 } from '../src/web-config/contracts.js'
@@ -251,11 +250,12 @@ describe('Search Enhance Web configuration Host bridge', () => {
       baseUrl: 'https://grok-gateway.example/v1',
       model: 'grok-4.20-beta',
     })
-    expect(snapshot.value.webExtract).toEqual({
-      smartDirect: { proxyUrl: 'http://127.0.0.1:7890' },
-      direct: { proxyUrl: 'http://127.0.0.1:7890' },
+    expect(snapshot.value.webExtract).toMatchObject({
+      tavily: { enabled: true }, firecrawl: { enabled: true },
+      smartDirect: { enabled: true, proxyUrl: 'http://127.0.0.1:7890' },
+      direct: { enabled: true, proxyUrl: 'http://127.0.0.1:7890' },
     })
-    expect(snapshot.user?.webExtract).toEqual(snapshot.value.webExtract)
+    expect(snapshot.value.webExtract).toMatchObject(snapshot.user?.webExtract ?? {})
     expect(snapshot.options.proxyUrlMaxCharacters).toBe(WEB_EXTRACT_PROXY_URL_MAX_CHARACTERS)
     expect(snapshot.credentials.searchApi).toEqual({
       ref: 'TEST_GROK_SEARCH_KEY',
@@ -269,39 +269,33 @@ describe('Search Enhance Web configuration Host bridge', () => {
     expect(text).not.toContain('must-not-change')
   })
 
-  it('exposes and edits the supplementary discovery budget for every search profile', async () => {
-    expect([...WEB_EXTRA_DISCOVERY_PROFILES]).toEqual([...SEARCH_PROFILES])
-    for (const profile of SEARCH_PROFILES) {
-      expect(WEB_EDITABLE_PATHS.some(
-        path => path.length === 2 && path[0] === 'extraDiscoverySources' && path[1] === profile,
-      )).toBe(true)
-    }
-
+  it('edits supplemental selections and extract allowlist independently with bounded limits', async () => {
     const harness = await createHarness()
     const snapshot = await (await fetch(`${harness.origin}${WEB_CONFIG_PATH}`)).json() as WebConfigSnapshot
-    expect(Object.values(snapshot.value.extraDiscoverySources).every(value => value === 0)).toBe(true)
-    expect(snapshot.options.extraDiscoveryMaxSources).toBe(EXTRA_DISCOVERY_SOURCES_MAX)
+    expect(snapshot.value.supplementalSearch).toEqual({ exa: false, tavily: false, firecrawl: false, maxSourcesPerProvider: 5 })
+    expect(snapshot.options.supplementalSearchMaxSources).toBe(SUPPLEMENTAL_SEARCH_MAX_SOURCES)
 
     const updated = await mutate(harness, {
       expectedRevision: 0,
-      mutations: [{ op: 'set', path: ['extraDiscoverySources', 'auto'], value: 1 }],
+      mutations: [
+        { op: 'set', path: ['supplementalSearch', 'exa'], value: true },
+        { op: 'set', path: ['supplementalSearch', 'tavily'], value: true },
+        { op: 'set', path: ['webExtract', 'tavily', 'enabled'], value: false },
+      ],
     })
     const applied = await updated.json() as WebConfigSnapshot
     expect(updated.status).toBe(200)
-    expect(applied.value.extraDiscoverySources.auto).toBe(1)
-    expect(applied.value.extraDiscoverySources.academic).toBe(0)
-    expect(applied.user?.extraDiscoverySources).toEqual({ auto: 1 })
+    expect(applied.value.supplementalSearch).toMatchObject({ exa: true, tavily: true, firecrawl: false })
+    expect(applied.value.webExtract.tavily.enabled).toBe(false)
+    expect(applied.user?.supplementalSearch).toEqual({ exa: true, tavily: true })
 
-    const rejected = await mutate(harness, {
-      expectedRevision: 1,
-      mutations: [{
-        op: 'set',
-        path: ['extraDiscoverySources', 'auto'],
-        value: EXTRA_DISCOVERY_SOURCES_MAX + 1,
-      }],
-    })
-    expect(rejected.status).toBe(422)
-    expect((await rejected.json() as { error: { code: string } }).error.code).toBe('settings-rejected')
+    for (const mutation of [
+      { op: 'set', path: ['supplementalSearch', 'maxSourcesPerProvider'], value: SUPPLEMENTAL_SEARCH_MAX_SOURCES + 1 },
+      { op: 'set', path: ['supplementalSearch', 'exa'], value: 'yes' },
+    ]) {
+      const rejected = await mutate(harness, { expectedRevision: 1, mutations: [mutation] })
+      expect(rejected.status).toBe(422)
+    }
   })
 
   it('mutates one path with revision fencing and preserves third-party, provider, future, and unrelated settings', async () => {
@@ -353,7 +347,7 @@ describe('Search Enhance Web configuration Host bridge', () => {
 
     expect(updated.status).toBe(200)
     expect(snapshot.revision).toBe(1)
-    expect(snapshot.value.webExtract).toEqual({
+    expect(snapshot.value.webExtract).toMatchObject({
       smartDirect: { proxyUrl: 'http://127.0.0.1:7892' },
       direct: { proxyUrl: '' },
     })

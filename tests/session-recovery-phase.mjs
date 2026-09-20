@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFile, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import {
@@ -119,8 +119,8 @@ async function followup(agent, text) {
 const [{ boot }, scriptedModule, sourceStorageModule, documentationModule] = await Promise.all([
   import('@deepseek-ai/dsh-app-boot'),
   import(pathToFileURL(fixturePath).href),
-  import('@kkkneko/dsh-search-enhance/source-storage'),
-  import('@kkkneko/dsh-search-enhance/documentation'),
+  import('dsh-search-enhance/source-storage'),
+  import('dsh-search-enhance/documentation'),
 ])
 
 let ctx
@@ -260,8 +260,9 @@ try {
 
     const participated = await ctx.sessions.flush(handle.agent.session)
     assert.equal(participated, true, 'JSONL persistence did not participate in flush')
-    const raw = await ctx.sessionPersistence.readRaw(sessionId)
-    assert.ok(raw, 'JSONL session artifact was not materialized')
+    const rawPath = await ctx.sessionPersistence.resolveCurrentLog(sessionId)
+    assert.ok(rawPath, 'JSONL session artifact was not materialized')
+    const raw = { filename: basename(rawPath), content: await readFile(rawPath, 'utf8') }
 
     const events = handle.agent.session.snapshotEvents()
     assertContinuous(events)
@@ -361,7 +362,13 @@ try {
     assert.equal(typeof state.docRef, 'string')
     assert.equal(Number.isSafeInteger(state.forkBoundary), true)
 
-    const inspection = await ctx.sessionPersistence.load(sessionId)
+    const stored = await ctx.sessionPersistence.open(sessionId, 'read')
+    let inspection
+    try {
+      inspection = { meta: stored.header, ...await stored.read() }
+    } finally {
+      await stored.close()
+    }
     assert.equal(String(inspection.meta.id), String(sessionId))
     assertContinuous(inspection.events)
     assertSupported(inspection.events)
@@ -596,8 +603,9 @@ try {
     }
 
     await ctx.sessions.flush(handle.agent.session)
-    const resumedRaw = await ctx.sessionPersistence.readRaw(sessionId)
-    assert.ok(resumedRaw)
+    const resumedRawPath = await ctx.sessionPersistence.resolveCurrentLog(sessionId)
+    assert.ok(resumedRawPath)
+    const resumedRaw = { content: await readFile(resumedRawPath, 'utf8') }
     assert.equal(resumedRaw.content.includes('search-enhance/'), false)
     assert.equal(resumedRaw.content.includes('fresh-process-search-secret'), false)
     assert.equal(resumedRaw.content.includes('fresh-process-context7-secret'), false)

@@ -111,10 +111,7 @@ function scenarioConfig(
         },
       },
     },
-    extraDiscoverySources: {
-      ...base.extraDiscoverySources,
-      [fixture.profile]: 4,
-    },
+    supplementalSearch: { exa: true, tavily: true, firecrawl: true, maxSourcesPerProvider: 4 },
     retention: {
       ...base.retention,
       canonicalOutputMaxBytes: 128 * 1024,

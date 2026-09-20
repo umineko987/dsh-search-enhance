@@ -24,7 +24,7 @@ const fixturePath = join(packageRoot, 'tests/fixtures/scripted-llm.mjs')
 const webFetchFixturePath = join(packageRoot, 'tests/fixtures/web-fetch-stub.mjs')
 const snapshotPath = join(packageRoot, 'tests/snapshots/web-extract-consumer.json')
 const packageJsonUrl = pathToFileURL(join(packageRoot, 'package.json')).href
-const selfLink = join(packageRoot, 'node_modules', '@kkkneko/dsh-search-enhance')
+const selfLink = join(packageRoot, 'node_modules', 'dsh-search-enhance')
 const tavilySecret = 'web-extract-tavily-secret-value'
 const firecrawlSecret = 'web-extract-firecrawl-secret-value'
 const credentialNames = ['SEARCH_API_KEY', 'CONTEXT7_API_KEY', 'EXA_API_KEY', 'TAVILY_API_KEY', 'FIRECRAWL_API_KEY']
@@ -291,8 +291,6 @@ function loaderYaml(dshHome, withWebFetch, withSpill) {
   config:
     root: ${JSON.stringify(join(dshHome, 'sessions'))}
     compression: none
-    packChunks: false
-    writeBatchMaxDelayMs: 1
 - id: system-prompt
   name: '@deepseek-ai/dsh-system-prompt'
 - id: tools
@@ -325,7 +323,7 @@ ${optionalWebFetch}${optionalSpill}- id: code-runtime
   config:
     watch: false
 - id: search-enhance
-  name: '@kkkneko/dsh-search-enhance'
+  name: 'dsh-search-enhance'
   config:
     fallbackMode: off
     providers:
@@ -446,25 +444,25 @@ async function runComposition({ withWebFetch, withSpill, full }) {
     const spillUrl = `${origin}/target/spill`
     const shortScenarios = full
       ? [
-          ['native-tavily', `${origin}/target/tavily`, 'markdown'],
-          ['native-firecrawl', `${origin}/target/firecrawl`, 'markdown'],
-          ['native-smart', `${origin}/target/smart`, 'markdown'],
-          ['native-direct-json', directJsonUrl, 'json'],
-          ['native-direct-raw', `${origin}/target/direct-raw`, 'raw'],
-          ['native-metadata-only', `${origin}/target/metadata-only`, 'raw'],
-          ['native-all-fail', `${origin}/target/all-fail`, 'markdown'],
-          ['native-spill', spillUrl, 'markdown'],
+          ['native-tavily', `${origin}/target/tavily`, 'markdown', 'tavily_extract'],
+          ['native-firecrawl', `${origin}/target/firecrawl`, 'markdown', 'firecrawl_scrape'],
+          ['native-smart', `${origin}/target/smart`, 'markdown', 'smart_direct'],
+          ['native-direct-json', directJsonUrl, 'json', 'direct'],
+          ['native-direct-raw', `${origin}/target/direct-raw`, 'raw', 'direct'],
+          ['native-metadata-only', `${origin}/target/metadata-only`, 'raw', 'direct'],
+          ['native-all-fail', `${origin}/target/all-fail`, 'markdown', 'tavily_extract'],
+          ['native-spill', spillUrl, 'markdown', 'tavily_extract'],
         ]
       : [
-          ['native-direct-json', directJsonUrl, 'json'],
-          ['native-no-spill', spillUrl, 'markdown'],
+          ['native-direct-json', directJsonUrl, 'json', 'direct'],
+          ['native-no-spill', spillUrl, 'markdown', 'tavily_extract'],
         ]
-    const script = shortScenarios.flatMap(([id, url, format]) => [
-      { kind: 'tool', id, name: 'web_extract', arguments: { url, format } },
+    const script = shortScenarios.flatMap(([id, url, format, provider]) => [
+      { kind: 'tool', id, name: 'web_extract', arguments: { url, format, provider } },
       { kind: 'text', text: `${id} complete.` },
     ])
     if (full) {
-      const code = `return await tools.web_extract({ url: ${JSON.stringify(spillUrl)}, format: 'markdown' });`
+      const code = `return await tools.web_extract({ url: ${JSON.stringify(spillUrl)}, format: 'markdown', provider: 'tavily_extract' });`
       script.push(
         { kind: 'tool', id: 'code-spill', name: 'run_code', arguments: { code, description: 'Read the long fixture through web_extract' } },
         { kind: 'text', text: 'code spill complete.' },
@@ -480,7 +478,7 @@ async function runComposition({ withWebFetch, withSpill, full }) {
       packageJsonUrl,
     )
     await ctx.loader.await()
-    const pluginEntry = [...ctx.loader.entries()].find(entry => entry.options.name === '@kkkneko/dsh-search-enhance')
+    const pluginEntry = [...ctx.loader.entries()].find(entry => entry.options.name === 'dsh-search-enhance')
     assert.ok(pluginEntry?.fiber, 'Loader did not create web-extract plugin fiber')
     await pluginEntry.fiber.await()
 
@@ -603,9 +601,7 @@ async function runComposition({ withWebFetch, withSpill, full }) {
       })
       const allFailText = modelText(allFail.result)
       assert.match(allFailText, /SEARCH_WEB_EXTRACT_FAILED: tavily_extract\[/)
-      assert.match(allFailText, /firecrawl_scrape\[/)
-      assert.match(allFailText, /smart_direct\[/)
-      assert.match(allFailText, /direct\[/)
+      assert.doesNotMatch(allFailText, /firecrawl_scrape\[|smart_direct\[|direct\[/)
       assert.doesNotMatch(allFailText, /target\/all-fail|authorization|bearer/i)
       assert.deepEqual(cards.find(item => item.callId === 'native-all-fail')?.card, {
         card: 'generic',
@@ -634,19 +630,21 @@ async function runComposition({ withWebFetch, withSpill, full }) {
       )
       assert.match(modelText(outerCode.result), /Full formatted result stored at:/)
 
-      const codeDispatches = codeAgent.session.snapshotEvents().filter(event => event.type === 'tool/code-dispatch')
+      const codeDispatches = codeAgent.session.snapshotEvents().filter(event => event.type === 'tool/ptc-dispatch')
       assert.equal(codeDispatches.length, 1)
       assert.equal(codeDispatches[0].data.name, 'web_extract')
       assert.match(codeDispatches[0].data.content[0].text, /Full formatted result stored at:/)
       assert.equal('meta' in codeDispatches[0].data, false)
 
-      const nativeRaw = await ctx.sessionPersistence.readRaw(nativeAgent.session.id)
-      const codeRaw = await ctx.sessionPersistence.readRaw(codeAgent.session.id)
-      assert.ok(nativeRaw && codeRaw)
+      const nativeRawPath = await ctx.sessionPersistence.resolveCurrentLog(nativeAgent.session.id)
+      const codeRawPath = await ctx.sessionPersistence.resolveCurrentLog(codeAgent.session.id)
+      assert.ok(nativeRawPath && codeRawPath)
+      const nativeRaw = { content: await readFile(nativeRawPath, 'utf8') }
+      const codeRaw = { content: await readFile(codeRawPath, 'utf8') }
       assert.match(nativeRaw.content, /"type":"tool\/call"/)
       assert.match(nativeRaw.content, /"type":"tool\/result"/)
-      assert.match(codeRaw.content, /"type":"tool\/code-dispatch-start"/)
-      assert.match(codeRaw.content, /"type":"tool\/code-dispatch"/)
+      assert.match(codeRaw.content, /"type":"tool\/ptc-dispatch-start"/)
+      assert.match(codeRaw.content, /"type":"tool\/ptc-dispatch"/)
       assert.match(codeRaw.content, /Full formatted result stored at:/)
       assert.equal(nativeRaw.content.includes(longMiddle), false)
       assert.equal(codeRaw.content.includes(longMiddle), false)
@@ -674,7 +672,13 @@ async function runComposition({ withWebFetch, withSpill, full }) {
       const nativeHandleIndex = handles.findIndex(handle => handle.agent === nativeAgent)
       const [nativeHandle] = handles.splice(nativeHandleIndex, 1)
       await nativeHandle.dispose()
-      const loaded = await ctx.sessionPersistence.load(nativeSessionId)
+      const stored = await ctx.sessionPersistence.open(nativeSessionId, 'read')
+      let loaded
+      try {
+        loaded = await stored.read()
+      } finally {
+        await stored.close()
+      }
       const replayCall = toolCallEvent({ snapshotEvents: () => loaded.events }, 'native-smart')
       const replayResult = toolResultEvent({ snapshotEvents: () => loaded.events }, 'native-smart')
       const diskReplayCard = definition.presentResult(
@@ -695,7 +699,7 @@ async function runComposition({ withWebFetch, withSpill, full }) {
       const postRestart = await ctx.tools.execute({
         callId: ToolCallId('post-restart-direct-json'),
         name: 'web_extract',
-        arguments: { url: directJsonUrl, format: 'json' },
+        arguments: { url: directJsonUrl, format: 'json', provider: 'direct' },
         signal: new AbortController().signal,
       })
       assert.equal(postRestart.isError, false)
@@ -714,8 +718,8 @@ async function runComposition({ withWebFetch, withSpill, full }) {
         toolResultEvent(nativeAgent.session, 'native-spill'),
         ...codeAgent.session.snapshotEvents().filter(event => [
           'tool/call',
-          'tool/code-dispatch-start',
-          'tool/code-dispatch',
+          'tool/ptc-dispatch-start',
+          'tool/ptc-dispatch',
           'tool/result',
         ].includes(event.type)),
       ].map(event => {
@@ -727,7 +731,7 @@ async function runComposition({ withWebFetch, withSpill, full }) {
             arguments: JSON.parse(event.data.arguments),
           }
         }
-        if (event.type === 'tool/code-dispatch-start' || event.type === 'tool/code-dispatch') {
+        if (event.type === 'tool/ptc-dispatch-start' || event.type === 'tool/ptc-dispatch') {
           return {
             type: event.type,
             rootCallId: String(event.data.rootCallId),

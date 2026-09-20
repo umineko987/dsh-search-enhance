@@ -1,10 +1,7 @@
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-tools'
 
 import type { StoredSourceRecord } from '../contracts/index.js'
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-}
 
 function successfulTopLevelResult(event: SessionEvent, callId: string): boolean {
   if (event.type !== 'tool/result') return false
@@ -19,9 +16,8 @@ function successfulCodeDispatch(
   event: SessionEvent,
   record: StoredSourceRecord,
 ): boolean {
-  if (String(event.type) !== 'tool/code-dispatch') return false
-  const data: unknown = event.data
-  if (!isObject(data)) return false
+  if (event.type !== 'tool/ptc-dispatch') return false
+  const data = event.data
   return data.isError === false
     && data.rootCallId === record.call.rootCallId
     && data.subCallId === record.call.callId

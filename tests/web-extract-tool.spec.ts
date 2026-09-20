@@ -62,7 +62,7 @@ function attempt(
     capability: 'web_extract',
     durationMs: 7,
     outcome,
-    participatedInFallback: provider !== 'tavily_extract',
+    participatedInFallback: false,
     provider,
     ...(outcome === 'failed'
       ? { errorKind: 'network' as const, retryable: true }
@@ -153,27 +153,39 @@ function toolWith(
 describe('web_extract model tool contract', () => {
   it('exposes only url/format and rejects extra, invalid-format, and invalid-URL arguments', async () => {
     const schema = parameterSchemaSpecToJsonSchema(WEB_EXTRACT_PARAMETERS)
-    expect(Object.keys(schema.properties)).toEqual(['url', 'format'])
-    expect(schema.required).toEqual(['url'])
+    expect(Object.keys(schema.properties)).toEqual(['url', 'provider', 'format'])
+    expect(schema.required).toEqual(['url', 'provider'])
     expect(schema.properties.format).toMatchObject({
       default: 'markdown',
       enum: ['markdown', 'text', 'html', 'json', 'raw'],
     })
-    expect(JSON.stringify(schema)).not.toMatch(/provider|proxy|header|fingerprint|browser|budget|redirect|retry|defuddle/i)
+    expect(JSON.stringify(schema)).not.toMatch(/proxy|header|fingerprint|browser|budget|redirect|retry|defuddle/i)
 
     const extract = vi.fn(async () => internalResult())
     const { operations, tool } = toolWith(extract)
     for (const args of [
-      { url: 'https://example.test', provider: 'direct' },
-      { url: 'https://example.test', format: 'yaml' },
-      { url: '' },
-      { url: 'ftp://example.test/file' },
-      { url: 'https://user:secret@example.test/file' },
+      { url: 'https://example.test' },
+      { url: 'https://example.test', provider: 'auto' },
+      { url: 'https://example.test', provider: 'direct', proxy: 'http://proxy.test' },
+      { url: 'https://example.test', provider: 'direct', format: 'yaml' },
+      { url: '', provider: 'direct' },
+      { url: 'ftp://example.test/file', provider: 'direct' },
+      { url: 'https://user:secret@example.test/file', provider: 'direct' },
     ]) {
       await expect(tool.execute(args as never, runContext(args))).rejects.toMatchObject({
         code: 'INVALID_ARGS',
       })
     }
+    expect(extract).not.toHaveBeenCalled()
+    await operations.stop()
+  })
+
+  it('rejects an explicit Provider outside the user allowlist', async () => {
+    const extract = vi.fn(async () => internalResult())
+    const value = config()
+    const { operations, tool } = toolWith(extract, { ...value, webExtract: { ...value.webExtract, direct: { ...value.webExtract.direct, enabled: false } } })
+    const args = { url: 'https://example.test', provider: 'direct' as const }
+    await expect(tool.execute(args, runContext(args))).rejects.toMatchObject({ code: 'INVALID_ARGS' })
     expect(extract).not.toHaveBeenCalled()
     await operations.stop()
   })
@@ -201,7 +213,8 @@ describe('web_extract model tool contract', () => {
       operations,
       orchestrator: { extract: extract as never },
     })
-    const args = { url: '  http://localhost:8080/article  ' }
+    settingsReads = 0
+    const args = { url: '  http://localhost:8080/article  ', provider: 'direct' as const }
     const result = await tool.execute(args, runContext(args)) as WebExtractOutput
 
     expect(settingsReads).toBe(1)
@@ -230,7 +243,7 @@ describe('web_extract model tool contract', () => {
         outcome: 'success',
         count: 1,
         duration_ms: 7,
-        fallback: true,
+        fallback: false,
       }],
     })
     expect(result).not.toHaveProperty('requestedUrl')
@@ -245,7 +258,7 @@ describe('web_extract model tool contract', () => {
     const reason = new Error('caller cancellation identity')
     const cancelled = toolWith(async () => { throw reason })
     await expect(cancelled.tool.execute(
-      { url: 'https://example.test' },
+      { url: 'https://example.test', provider: 'direct' },
       runContext({ url: 'https://example.test' }),
     )).rejects.toBe(reason)
     await cancelled.operations.stop()
@@ -262,7 +275,7 @@ describe('web_extract model tool contract', () => {
     let caught: unknown
     try {
       await failed.tool.execute(
-        { url: 'https://example.test' },
+        { url: 'https://example.test', provider: 'direct' },
         runContext({ url: 'https://example.test' }),
       )
     } catch (error) {
@@ -298,7 +311,7 @@ describe('web_extract model tool contract', () => {
       const result = await ctx.tools.execute({
         callId: ToolCallId('web-extract-safe-failure'),
         name: 'web_extract',
-        arguments: { url: 'https://secret-target.invalid/path' },
+        arguments: { url: 'https://secret-target.invalid/path', provider: 'direct' },
         signal: new AbortController().signal,
       })
       expect(result.isError).toBe(true)
@@ -418,7 +431,7 @@ describe('web_extract canonical and render boundaries', () => {
 
 describe('web_extract replayable cards', () => {
   it('uses a generic fetch pending card and never fabricates a remote HTTP status/card', () => {
-    const args = { url: 'https://example.test/article', format: 'markdown' as const }
+    const args = { url: 'https://example.test/article', format: 'markdown' as const, provider: 'tavily_extract' as const }
     expect(presentWebExtractCall(args)).toEqual({
       card: 'generic',
       kind: 'fetch',
@@ -469,7 +482,7 @@ describe('web_extract replayable cards', () => {
   })
 
   it('projects exact/over caps onto SmartDirect/Direct cards and ignores host spill on replay', () => {
-    const args = { url: 'https://example.test/article' }
+    const args = { url: 'https://example.test/article', provider: 'direct' as const }
     const matrix = []
     for (const [route, evidence] of [
       ['smart_direct', 'extracted_content'],

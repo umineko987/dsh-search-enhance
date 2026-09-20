@@ -123,6 +123,7 @@ export async function apply(ctx: Context, config: SearchEnhanceConfigValue): Pro
       new SearchApiModelListDiagnosticProbe(searchApi),
       new Context7ResolveDiagnosticProbe(context7Remote),
       new SourceSearchDiagnosticProbe('docs_search', 'exa', exa),
+      new SourceSearchDiagnosticProbe('main_search', 'exa', exa),
       new SourceSearchDiagnosticProbe('main_search', 'tavily_search', tavily),
       new SourceSearchDiagnosticProbe('main_search', 'firecrawl_search', firecrawl),
     ],

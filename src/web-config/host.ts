@@ -6,7 +6,7 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 
 import {
   Config as SearchEnhanceConfig,
-  EXTRA_DISCOVERY_SOURCES_MAX,
+  SUPPLEMENTAL_SEARCH_MAX_SOURCES,
   SEARCH_API_PROTOCOLS,
   SEARCH_DEPTHS,
   SEARCH_ENHANCE_SETTINGS_NAMESPACE,
@@ -117,7 +117,7 @@ function projectConfig(config: SearchEnhanceConfigValue): WebEditableConfig {
     defaultDepth: config.defaultDepth,
     toolTimeoutMs: config.toolTimeoutMs,
     toolDiscovery: { mode: config.toolDiscovery.mode },
-    extraDiscoverySources: { ...config.extraDiscoverySources },
+    supplementalSearch: { ...config.supplementalSearch },
     searchApi: {
       baseUrl: boundedString(config.searchApi.baseUrl, WEB_BASE_URL_MAX_CHARACTERS, 'Grok base URL'),
       protocol: config.searchApi.protocol,
@@ -137,10 +137,14 @@ function projectConfig(config: SearchEnhanceConfigValue): WebEditableConfig {
       firecrawl: projectProvider(config.providers.firecrawl),
     },
     webExtract: {
+      tavily: { enabled: config.webExtract.tavily.enabled },
+      firecrawl: { enabled: config.webExtract.firecrawl.enabled },
       smartDirect: {
+        enabled: config.webExtract.smartDirect.enabled,
         proxyUrl: projectProxyUrl(config.webExtract.smartDirect.proxyUrl, 'smart_direct proxy URL'),
       },
       direct: {
+        enabled: config.webExtract.direct.enabled,
         proxyUrl: projectProxyUrl(config.webExtract.direct.proxyUrl, 'direct proxy URL'),
       },
     },
@@ -183,7 +187,7 @@ function projectLayer(value: unknown): WebConfigLayer | undefined {
     const candidate = readPath(value, path)
     if (!candidate.present) continue
     const leaf = candidate.value
-    if (typeof leaf !== 'string' && typeof leaf !== 'number') continue
+    if (typeof leaf !== 'string' && typeof leaf !== 'number' && typeof leaf !== 'boolean') continue
     if (typeof leaf === 'string') boundedString(leaf, maxCharactersForPath(path), path.join('.'))
     writePath(projected, path, leaf)
   }
@@ -277,7 +281,7 @@ export async function readWebConfigSnapshot(
       thinkingLevels: [...THINKING_LEVELS],
       toolDiscoveryModes: [...TOOL_DISCOVERY_MODES],
       proxyUrlMaxCharacters: WEB_EXTRACT_PROXY_URL_MAX_CHARACTERS,
-      extraDiscoveryMaxSources: EXTRA_DISCOVERY_SOURCES_MAX,
+      supplementalSearchMaxSources: SUPPLEMENTAL_SEARCH_MAX_SOURCES,
     },
     credentials: Object.fromEntries(credentialEntries) as Record<WebCredentialSlot, WebCredentialState>,
     diagnostics: {
@@ -474,8 +478,8 @@ function parseMutation(value: unknown): WebSettingsMutationRequest {
       throw new BridgeHttpError(400, 'invalid-mutation', 'A set mutation contains unsupported fields.')
     }
     const mutationValue = candidate['value']
-    if (typeof mutationValue !== 'string' && typeof mutationValue !== 'number') {
-      throw new BridgeHttpError(400, 'invalid-mutation-value', 'A settings value must be a string or number.')
+    if (typeof mutationValue !== 'string' && typeof mutationValue !== 'number' && typeof mutationValue !== 'boolean') {
+      throw new BridgeHttpError(400, 'invalid-mutation-value', 'A settings value must be a string, number, or boolean.')
     }
     if (typeof mutationValue === 'string') {
       boundedString(mutationValue, maxCharactersForPath(canonical), canonical.join('.'))

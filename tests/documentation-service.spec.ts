@@ -741,7 +741,7 @@ describe('web_search documentation integration', () => {
     })
 
     const run = (query: string, profile: 'coding_docs' | 'fact_check') => orchestrator.search({
-      config: test.config,
+      config: { ...test.config, supplementalSearch: { ...test.config.supplementalSearch, exa: true } },
       profile,
       query,
       signal: new AbortController().signal,
@@ -755,7 +755,7 @@ describe('web_search documentation integration', () => {
     expect(test.calls).toHaveLength(0)
 
     await run('compare quarterly revenue reports', 'fact_check')
-    expect(exaSearch).toHaveBeenCalledTimes(2)
+    expect(exaSearch).toHaveBeenCalledTimes(3)
     expect(test.calls).toHaveLength(0)
   })
 })

@@ -14,7 +14,7 @@ const snapshotPath = join(packageRoot, 'tests/snapshots/docs-consumer.json')
 const packageJsonUrl = pathToFileURL(join(packageRoot, 'package.json')).href
 const dshHome = await mkdtemp(join(tmpdir(), 'dsh-search-enhance-docs-'))
 const loaderConfig = join(dshHome, 'cordis.yml')
-const selfLink = join(packageRoot, 'node_modules', '@kkkneko/dsh-search-enhance')
+const selfLink = join(packageRoot, 'node_modules', 'dsh-search-enhance')
 const context7Secret = 'docs-context7-secret-value'
 const exaSecret = 'docs-exa-secret-value'
 const candidateWindowQuery = 'React useEffect cleanup candidate-window documentation'
@@ -312,7 +312,7 @@ try {
   config:
     watch: false
 - id: search-enhance
-  name: '@kkkneko/dsh-search-enhance'
+  name: 'dsh-search-enhance'
   config:
     toolDiscovery:
       mode: all
@@ -345,8 +345,8 @@ try {
   const [{ boot }, scriptedModule, documentationModule, sourceStorageModule] = await Promise.all([
     import('@deepseek-ai/dsh-app-boot'),
     import(pathToFileURL(fixturePath).href),
-    import('@kkkneko/dsh-search-enhance/documentation'),
-    import('@kkkneko/dsh-search-enhance/source-storage'),
+    import('dsh-search-enhance/documentation'),
+    import('dsh-search-enhance/source-storage'),
   ])
   const code = [
     "const docs = await tools.docs_search({ query: 'canonical equality docs', provider: 'exa', max_results: 2 });",
@@ -379,7 +379,7 @@ try {
     packageJsonUrl,
   )
   await ctx.loader.await()
-  const pluginEntry = [...ctx.loader.entries()].find(entry => entry.options.name === '@kkkneko/dsh-search-enhance')
+  const pluginEntry = [...ctx.loader.entries()].find(entry => entry.options.name === 'dsh-search-enhance')
   assert.ok(pluginEntry?.fiber, 'Loader did not create the search-enhance fiber')
   await pluginEntry.fiber.await()
   assert.deepEqual(ctx.tools.schemas().map(schema => schema.name), globalDefinitions)
@@ -796,7 +796,7 @@ try {
   assert.equal(staleObserved.card?.card, 'web')
   assert.match(staleObserved.card?.title ?? '', /stale cache/)
 
-  const codeDispatches = codeAgent.session.snapshotEvents().filter(event => event.type === 'tool/code-dispatch')
+  const codeDispatches = codeAgent.session.snapshotEvents().filter(event => event.type === 'tool/ptc-dispatch')
   assert.deepEqual(codeDispatches.map(event => event.data.name), ['docs_search', 'search_call'])
   assert.ok(codeDispatches.every(event => !('meta' in event.data)))
 

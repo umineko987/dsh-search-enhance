@@ -5,6 +5,7 @@ import {
 } from '@deepseek-ai/dsh-tools'
 
 import type { Config } from '../config.js'
+import { enabledWebExtractProviders } from '../web-extract/types.js'
 import {
   buildResearchPlan,
   type ResearchPlanBuildOptions,
@@ -38,10 +39,13 @@ function plannerOptions(
   config: Config,
   webMapAvailable: boolean,
 ): ResearchPlanBuildOptions {
+  const providers = enabledWebExtractProviders(config)
+  const webExtractProvider = providers.includes('smart_direct') ? 'smart_direct' : providers[0]
   return {
     config: config.researchPlan,
     webMapAvailable,
     siteMapMaxLinks: config.siteMap.maxLinks,
+    ...(webExtractProvider === undefined ? {} : { webExtractProvider }),
   }
 }
 

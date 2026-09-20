@@ -36,6 +36,7 @@ export interface ResearchPlanBuildOptions {
   readonly webMapAvailable: boolean
   /** The deployment site-map link cap used when emitting a web_map step. */
   readonly siteMapMaxLinks?: number
+  readonly webExtractProvider?: import('../web-extract/types.js').WebExtractRoute
 }
 
 const RESEARCH_PLAN_MAX_STEPS = 10
@@ -440,6 +441,7 @@ function toolParams(
   query: string,
   budget: (typeof RESEARCH_PLAN_BUDGETS)[number],
   siteMapMaxLinks: number,
+  webExtractProvider: ResearchPlanBuildOptions['webExtractProvider'],
 ): ResearchPlanStep['params'] {
   switch (tool) {
     case 'web_search':
@@ -447,7 +449,7 @@ function toolParams(
     case 'docs_search':
       return { query }
     case 'web_extract':
-      return { url: query, format: 'markdown' }
+      return { url: query, format: 'markdown', ...(webExtractProvider === undefined ? {} : { provider: webExtractProvider }) }
     case 'web_map': {
       const limits = siteMapDefaults(budget, siteMapMaxLinks)
       return {
@@ -495,6 +497,9 @@ function buildGapMessages(
   for (const step of steps) {
     if ((step.tool === 'web_extract' || step.tool === 'web_map') && !validTargetUrl(step.query)) {
       gaps.push(`${step.id} requires a valid absolute HTTP(S) URL before ${step.tool} can run.`)
+    }
+    if (step.tool === 'web_extract' && !('provider' in step.params)) {
+      gaps.push(`${step.id} requires an explicitly selected, user-enabled extraction provider before execution.`)
     }
     if (step.tool !== 'web_extract') {
       gaps.push(`${step.id} is discovery evidence; select key URLs and fetch them with web_extract before claims.`)
@@ -552,7 +557,7 @@ function planForInput(
     capability: entry.tool,
     purpose: entry.reason,
     query: entry.query,
-    params: toolParams(entry.tool, entry.query, input.budget, deploymentLinkCap),
+    params: toolParams(entry.tool, entry.query, input.budget, deploymentLinkCap, options.webExtractProvider),
     evidence_requirement: EVIDENCE_REQUIREMENTS[entry.tool],
   }))
   const tools = uniqueTools(steps)

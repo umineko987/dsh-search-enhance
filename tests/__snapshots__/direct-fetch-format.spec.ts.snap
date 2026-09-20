@@ -4,33 +4,6 @@ exports[`DirectFetchProvider redirects, formats, and adapter integration > pins 
 {
   "attempts": [
     {
-      "attempts": 0,
-      "capability": "web_extract",
-      "durationMs": 0,
-      "outcome": "skipped",
-      "participatedInFallback": false,
-      "provider": "tavily_extract",
-      "skipReason": "not_configured",
-    },
-    {
-      "attempts": 0,
-      "capability": "web_extract",
-      "durationMs": 0,
-      "outcome": "skipped",
-      "participatedInFallback": false,
-      "provider": "firecrawl_scrape",
-      "skipReason": "not_configured",
-    },
-    {
-      "attempts": 0,
-      "capability": "web_extract",
-      "durationMs": 0,
-      "outcome": "skipped",
-      "participatedInFallback": false,
-      "provider": "smart_direct",
-      "skipReason": "not_configured",
-    },
-    {
       "attempts": 1,
       "capability": "web_extract",
       "durationMs": 0,

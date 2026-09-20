@@ -88,8 +88,9 @@ function input(
   url = 'https://example.test/article',
   format: WebExtractFormat | undefined = 'markdown',
   signal = new AbortController().signal,
+  provider: WebExtractRoute = 'tavily_extract',
 ) {
-  return { format, signal, url }
+  return { format, signal, url, provider }
 }
 
 const routeAttempt = (route: WebExtractRoute): WebExtractRouteAttempt => ({
@@ -102,102 +103,39 @@ const routeAttempt = (route: WebExtractRoute): WebExtractRouteAttempt => ({
 })
 
 describe('web_extract internal contract and fixed orchestrator', () => {
-  it('keeps the fixed order, continues after failures, and stops at first success', async () => {
-    const calls: string[] = []
-    const tavily = adapter('tavily_extract', async () => {
-      calls.push('tavily_extract')
-      throw new ProviderError({ capability: 'web_extract', kind: 'network', provider: 'tavily' })
-    })
-    const firecrawl = adapter('firecrawl_scrape', async () => {
-      calls.push('firecrawl_scrape')
-      throw new ProviderError({ capability: 'web_extract', kind: 'http', provider: 'firecrawl', status: 503 })
-    })
-    const smart = adapter('smart_direct', async () => {
-      calls.push('smart_direct')
-      return success('from cleaned extraction')
-    })
-    const direct = adapter('direct', async () => {
-      calls.push('direct')
-      return success('must not run')
-    })
-
-    const result = await orchestrator({
-      direct,
-      firecrawl_scrape: firecrawl,
-      smart_direct: smart,
-      tavily_extract: tavily,
-    }).extract(input())
-
-    expect(calls).toEqual(['tavily_extract', 'firecrawl_scrape', 'smart_direct'])
-    expect(result).toMatchObject({
-      content: 'from cleaned extraction',
-      evidenceLevel: 'extracted_content',
-      retrievalRoute: 'smart_direct',
-      requestedUrl: 'https://example.test/article',
-    })
-    expect(result.attempts.map(attempt => [attempt.provider, attempt.outcome])).toEqual([
-      ['tavily_extract', 'failed'],
-      ['firecrawl_scrape', 'failed'],
-      ['smart_direct', 'success'],
-    ])
-  })
-
-  it('records format, disabled, and missing-credential skips as non-failures', async () => {
-    const tavily = adapter('tavily_extract', success(), { formats: ['text'] })
-    const firecrawl = adapter('firecrawl_scrape', success(), { enabled: false })
-    const smart = adapter('smart_direct', { state: 'not_configured' })
-    const direct = adapter('direct', success('direct fallback'))
-
-    const result = await orchestrator({
-      direct,
-      firecrawl_scrape: firecrawl,
-      smart_direct: smart,
-      tavily_extract: tavily,
-    }).extract(input('https://example.test/data', 'json'))
-
-    expect(result.retrievalRoute).toBe('direct')
-    expect(result.attempts.map(attempt => ({
-      outcome: attempt.outcome,
-      provider: attempt.provider,
-      skipReason: attempt.skipReason,
-    }))).toEqual([
-      { outcome: 'skipped', provider: 'tavily_extract', skipReason: 'format_unsupported' },
-      { outcome: 'skipped', provider: 'firecrawl_scrape', skipReason: 'disabled' },
-      { outcome: 'skipped', provider: 'smart_direct', skipReason: 'not_configured' },
-      { outcome: 'success', provider: 'direct', skipReason: undefined },
-    ])
-    expect(tavily.extract).not.toHaveBeenCalled()
-    expect(firecrawl.extract).not.toHaveBeenCalled()
-  })
-
-  it('throws one safe all-route infrastructure error after every route fails', async () => {
-    const secret = 'Authorization Bearer should-never-escape'
-    const makeFailure = (route: WebExtractRoute) => adapter(route, async () => {
-      throw new Error(`${secret} body=${route}`)
-    })
-    const request = orchestrator({
-      direct: makeFailure('direct'),
-      firecrawl_scrape: makeFailure('firecrawl_scrape'),
-      smart_direct: makeFailure('smart_direct'),
-      tavily_extract: makeFailure('tavily_extract'),
-    }).extract(input())
-
-    await expect(request).rejects.toBeInstanceOf(WebExtractInfrastructureError)
-    try {
-      await request
-    } catch (error) {
-      expect(error).toBeInstanceOf(WebExtractInfrastructureError)
-      const infrastructure = error as WebExtractInfrastructureError
-      expect(infrastructure.routeStatuses).toHaveLength(4)
-      expect(infrastructure.routeStatuses.map(status => status.provider)).toEqual([
-        'tavily_extract',
-        'firecrawl_scrape',
-        'smart_direct',
-        'direct',
-      ])
-      expect(JSON.stringify(infrastructure)).not.toContain(secret)
-      expect(JSON.stringify(infrastructure)).not.toContain('body=')
+  it.each(WEB_EXTRACT_ROUTES)('executes only the explicitly selected %s Provider', async (provider) => {
+    const adapters = Object.fromEntries(WEB_EXTRACT_ROUTES.map(route => [route, adapter(route, success(route))]))
+    const result = await orchestrator(adapters).extract(input(undefined, undefined, undefined, provider))
+    expect(result.content).toBe(provider)
+    expect(result.attempts).toHaveLength(1)
+    expect(result.attempts[0]).toMatchObject({ provider, outcome: 'success', participatedInFallback: false })
+    for (const route of WEB_EXTRACT_ROUTES) {
+      expect(adapters[route]!.extract).toHaveBeenCalledTimes(route === provider ? 1 : 0)
     }
+  })
+
+  it.each(['disabled', 'format_unsupported', 'not_configured'] as const)('reports %s without trying another Provider', async (skipReason) => {
+    const tavily = adapter('tavily_extract', skipReason === 'not_configured' ? { state: 'not_configured' } : success(), {
+      enabled: skipReason !== 'disabled',
+      formats: skipReason === 'format_unsupported' ? ['text'] : ['markdown'],
+    })
+    const direct = adapter('direct', success())
+    await expect(orchestrator({ tavily_extract: tavily, direct }).extract(input())).rejects.toMatchObject({
+      routeStatuses: [expect.objectContaining({ provider: 'tavily_extract', outcome: 'skipped', skipReason })],
+    })
+    expect(direct.extract).not.toHaveBeenCalled()
+  })
+
+  it('throws a safe selected-Provider error and never dispatches an alternative', async () => {
+    const secret = 'Authorization Bearer should-never-escape'
+    const tavily = adapter('tavily_extract', async () => { throw new Error(secret) })
+    const direct = adapter('direct', success())
+    const error = await orchestrator({ tavily_extract: tavily, direct }).extract(input()).catch(error => error)
+    expect(error).toBeInstanceOf(WebExtractInfrastructureError)
+    expect(error.routeStatuses).toHaveLength(1)
+    expect(error.routeStatuses[0]).toMatchObject({ provider: 'tavily_extract', outcome: 'failed', participatedInFallback: false })
+    expect(JSON.stringify(error)).not.toContain(secret)
+    expect(direct.extract).not.toHaveBeenCalled()
   })
 
   it('stops the chain on caller cancellation and preserves the caller reason', async () => {
@@ -236,7 +174,7 @@ describe('web_extract internal contract and fixed orchestrator', () => {
 
   it('accepts a localhost URL at preflight without performing a network request', async () => {
     const direct = adapter('direct', success('fixture stub'))
-    const result = await orchestrator({ direct }).extract(input('  http://localhost:65535/fixture  '))
+    const result = await orchestrator({ direct }).extract(input('  http://localhost:65535/fixture  ', undefined, undefined, 'direct'))
 
     expect(result.requestedUrl).toBe('http://localhost:65535/fixture')
     expect(direct.extract).toHaveBeenCalledTimes(1)
@@ -257,7 +195,7 @@ describe('web_extract internal contract and fixed orchestrator', () => {
     for (const candidate of ['tavily_extract', 'firecrawl_scrape', 'smart_direct', 'direct'] as const) {
       adapters[candidate] = adapter(candidate, success(), { enabled: candidate === route })
     }
-    const result = await orchestrator(adapters).extract(input())
+    const result = await orchestrator(adapters).extract(input(undefined, undefined, undefined, route))
     expect(result.retrievalRoute).toBe(route)
     expect(result.evidenceLevel).toBe(evidenceLevel)
   })
@@ -310,7 +248,7 @@ describe('web_extract internal contract and fixed orchestrator', () => {
         result: transportFacts,
         state: 'complete',
       }),
-    }).extract(input())
+    }).extract(input(undefined, undefined, undefined, 'direct'))
     expect(direct).toMatchObject(transportFacts)
   })
 
@@ -324,7 +262,7 @@ describe('web_extract internal contract and fixed orchestrator', () => {
           candidate === route ? success(`body from ${route}`) : { state: 'not_configured' },
         )
       }
-      results.push(await orchestrator(adapters).extract(input()))
+      results.push(await orchestrator(adapters).extract(input(undefined, undefined, undefined, route)))
     }
 
     expect(results).toMatchSnapshot()

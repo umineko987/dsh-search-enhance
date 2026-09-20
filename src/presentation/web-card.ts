@@ -13,6 +13,7 @@ import {
 import {
   isWebExtractModelTextTruncated,
   isWebMapModelTextTruncated,
+  renderWebSearchLimitations,
 } from './render.js'
 import type {
   DocsSearchArgs,
@@ -143,11 +144,15 @@ export function webSearchPresentationMeta(
   _args: WebSearchArgs,
   value: WebSearchOutput,
 ): JsonValue {
+  const limitations = renderWebSearchLimitations(value)
+  const answer = limitations === undefined
+    ? value.answer
+    : [limitations, value.answer].filter(part => part !== undefined).join('\n\n')
   return {
     version: 1,
     type: 'web_search',
     source_produced: value.source_ref !== undefined,
-    ...(value.answer === undefined ? {} : { answer: value.answer }),
+    ...(answer === undefined ? {} : { answer }),
     sources: value.sources.map(source => ({ ...source })),
     truncated: value.truncated,
   }

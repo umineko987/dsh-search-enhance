@@ -118,13 +118,23 @@
     },
     {
       "name": "web_extract",
-      "description": "Read a specific HTTP(S) URL through independent extraction/direct routes. No JavaScript or login; host-reachable addresses may be accessed, and evidence differs by route.",
+      "description": "Preferred tool for readable webpage bodies: articles, blogs, repository READMEs, and model cards. For raw JSON APIs or XML/Atom feeds, prefer the host web_fetch when available. Read one HTTP(S) URL using exactly one explicitly selected Provider; failures never switch Providers. Enabled Providers: tavily_extract, firecrawl_scrape, smart_direct, direct. No JavaScript or login in local routes; host-reachable addresses may be accessed, and evidence differs by route.",
       "parameters": {
         "type": "object",
         "properties": {
           "url": {
             "type": "string",
             "description": "A non-empty concrete HTTP(S) URL to read."
+          },
+          "provider": {
+            "type": "string",
+            "description": "Choose exactly one Provider enabled in user settings. No automatic fallback.",
+            "enum": [
+              "tavily_extract",
+              "firecrawl_scrape",
+              "smart_direct",
+              "direct"
+            ]
           },
           "format": {
             "type": "string",
@@ -140,7 +150,8 @@
           }
         },
         "required": [
-          "url"
+          "url",
+          "provider"
         ]
       }
     }
@@ -1684,7 +1695,7 @@
     {
       "rootCallId": "code-docs-call",
       "parentCallId": "code-docs-call",
-      "subCallId": "code-docs-call:code:1",
+      "subCallId": "code-docs-call:ptc:1",
       "name": "docs_search",
       "arguments": {
         "query": "canonical equality docs",
@@ -1706,7 +1717,7 @@
     {
       "rootCallId": "code-docs-call",
       "parentCallId": "code-docs-call",
-      "subCallId": "code-docs-call:code:2",
+      "subCallId": "code-docs-call:ptc:2",
       "name": "search_call",
       "arguments": {
         "operation": "search_sources",
@@ -1771,7 +1782,7 @@
       "call": {
         "mode": "nested-code",
         "rootCallId": "code-docs-call",
-        "callId": "code-docs-call:code:1",
+        "callId": "code-docs-call:ptc:1",
         "name": "docs_search"
       },
       "sources": [

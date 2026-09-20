@@ -551,3 +551,104 @@ describe('bounded OpenAI-compatible response parsing', () => {
     )).toThrowError(expect.objectContaining({ code: 'SEARCH_RESPONSE_LIMIT' }))
   })
 })
+
+describe('native search metadata', () => {
+  it.each([
+    ['completions', false], ['completions', true],
+    ['responses', false], ['responses', true],
+  ] as const)('retains %s citations with streaming=%s', (protocol, streaming) => {
+    const citation = { url: 'https://docs.example.test/api', title: 'API reference', content: 'Relevant excerpt' }
+    const annotation = protocol === 'completions'
+      ? { type: 'url_citation', url_citation: citation }
+      : { type: 'url_citation', ...citation }
+    const message = { content: 'Answer.', annotations: [annotation] }
+    const output = [{
+      type: 'message',
+      content: [{ type: 'output_text', text: 'Answer.', annotations: [annotation] }],
+    }]
+    const payload = protocol === 'completions' ? { choices: [{ message }] } : { output }
+    const frames = protocol === 'completions'
+      ? [{ choices: [{ delta: { content: 'Answer.' } }] }, { choices: [{ delta: { annotations: [annotation] } }] }]
+      : [
+          { type: 'response.output_text.delta', delta: 'Answer.' },
+          { type: 'response.output_text.annotation.added', annotation },
+          { type: 'response.completed', response: { output } },
+        ]
+    const body = streaming
+      ? [...frames.map(frame => `data: ${JSON.stringify(frame)}`), 'data: [DONE]'].join('\n\n')
+      : JSON.stringify(payload)
+    expect(parseSearchApiResponse(body, protocol)).toEqual({
+      answer: 'Answer.',
+      sources: [{ provider: 'search-api', url: citation.url, title: citation.title, snippet: citation.content }],
+      sourcesTruncated: false,
+      searchActivity: true,
+    })
+  })
+
+  it('prioritizes bounded structured citations, ignores unsafe URLs, and drops numeric labels', () => {
+    const body = JSON.stringify({
+      output: [{ content: [{ type: 'output_text', text: 'Answer.\n\nSources:\n- https://tail.test/page', annotations: [
+        { type: 'url_citation', url: 'javascript:alert(1)' },
+        { type: 'url_citation', url: 'https://primary.test/page', title: '1' },
+        { type: 'url_citation', url: 'https://primary.test/page', title: 'Primary source' },
+        { type: 'url_citation', url: 'https://secondary.test/page', title: '2' },
+      ] }] }],
+    })
+    expect(parseSearchApiResponse(body, 'responses', { maxSources: 1 })).toMatchObject({
+      sources: [{ provider: 'search-api', url: 'https://primary.test/page', title: 'Primary source' }],
+      sourcesTruncated: true,
+      searchActivity: true,
+    })
+    expect(parseSearchApiResponse(body, 'responses', { maxSources: 0 })).toMatchObject({
+      sources: [], sourcesTruncated: true, searchActivity: true,
+    })
+    expect(() => parseSearchApiResponse(body, 'responses', { maxTitleCharacters: 2 }))
+      .toThrowError(expect.objectContaining({ code: 'SEARCH_RESPONSE_LIMIT' }))
+    expect(() => parseSearchApiResponse(body, 'responses', { maxSourceNesting: 1 }))
+      .toThrowError(expect.objectContaining({ code: 'SEARCH_RESPONSE_LIMIT' }))
+  })
+
+  it.each(['web_search_call', 'x_search_call'])('recognizes completed %s even without citations', (type) => {
+    const result = parseSearchApiResponse(JSON.stringify({ output: [
+      { type, status: 'completed' },
+      { type: 'message', content: [{ type: 'output_text', text: 'No matching results.' }] },
+    ] }), 'responses')
+    expect(result.searchActivity).toBe(true)
+    expect(result.sources).toEqual([])
+  })
+
+  it('recognizes OpenRouter search usage without treating model-authored links as execution proof', () => {
+    const payload = {
+      choices: [{ message: { content: 'See [a link](https://example.test).' } }],
+      usage: { server_tool_use: { web_search_requests: 1 } },
+    }
+    expect(parseSearchApiResponse(JSON.stringify(payload), 'completions').searchActivity).toBe(true)
+    payload.usage.server_tool_use.web_search_requests = 0
+    expect(parseSearchApiResponse(JSON.stringify(payload), 'completions')).not.toHaveProperty('searchActivity')
+    expect(parseSearchApiResponse(JSON.stringify({ output_text: 'Answer.', citations: ['https://source.test'] }), 'responses'))
+      .toMatchObject({ searchActivity: true, sources: [{ url: 'https://source.test' }] })
+  })
+
+  it('uses the final Responses text when the server adds citations after streaming deltas', () => {
+    const body = [
+      { type: 'response.output_text.delta', delta: 'Answer.' },
+      { type: 'response.completed', response: { output_text: 'Answer. [[1]](https://example.test)' } },
+    ].map(frame => `data: ${JSON.stringify(frame)}`).join('\n\n')
+    expect(parseSearchApiResponse(body, 'responses').answer).toBe('Answer. [[1]](https://example.test)')
+  })
+
+  it.each([
+    { error: { code: 429, message: 'private upstream detail' } },
+    { type: 'response.failed', response: { status: 'failed', error: { message: 'private detail' } } },
+    { type: 'response.incomplete', response: { status: 'incomplete', output_text: 'Partial answer' } },
+  ])('rejects terminal errors instead of returning a successful partial answer %#', (failure) => {
+    const body = [
+      'data: {"type":"response.output_text.delta","delta":"Partial answer"}',
+      `data: ${JSON.stringify(failure)}`,
+      'data: [DONE]',
+    ].join('\n\n')
+    expect(() => parseSearchApiResponse(body, 'responses')).toThrowError(
+      expect.objectContaining({ code: 'SEARCH_RESPONSE_MALFORMED', message: 'Search API response is malformed' }),
+    )
+  })
+})

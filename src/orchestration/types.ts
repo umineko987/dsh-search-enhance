@@ -1,4 +1,4 @@
-import type { Config, SearchDepth, SearchProfile } from '../config.js'
+import type { Config, SearchDepth, SearchProfile, SupplementalSearchProvider } from '../config.js'
 import type { CanonicalSource, SourceRecordCandidate } from '../contracts/index.js'
 import type {
   ProviderAttemptRecord,
@@ -13,7 +13,9 @@ import type { BoundedSourceProvider } from '../providers/types.js'
 
 export const SEARCH_WARNING_CODES = [
   'main_search_failed',
+  'native_search_unconfirmed',
   'provider_failed',
+  'provider_not_configured',
   'provider_result_truncated',
   'cache_stale',
   'cache_evicted',
@@ -33,18 +35,12 @@ export interface SearchWarning {
   readonly errorKind?: ProviderErrorKind
 }
 
-export interface DiscoveryBudgetAllocation {
-  readonly tavily: number
-  readonly firecrawl: number
-}
-
 /** One operation's fixed policy decision, excluding credentials and endpoints. */
 export interface SearchRoutingDecision {
   readonly profile: SearchProfile
   readonly depth: SearchDepth
-  readonly documentationEnhancement: boolean
-  readonly extraDiscoveryBudget: number
-  readonly discoveryAllocation: DiscoveryBudgetAllocation
+  readonly supplementalProviders: readonly SupplementalSearchProvider[]
+  readonly sourcesPerProvider: number
 }
 
 /** Ordinary canonical projection. It contains no routing, attempts, or hidden sources. */

@@ -512,8 +512,8 @@ describe('Firecrawl Scrape remote adapter', () => {
 })
 
 describe('remote extraction composition', () => {
-  it('skips an unconfigured Tavily route and returns Firecrawl as extracted-content evidence', async () => {
-    const credentialFixture = credentials([undefined, 'firecrawl-secret'])
+  it('returns explicitly selected Firecrawl without consulting Tavily credentials', async () => {
+    const credentialFixture = credentials(['firecrawl-secret'])
     const fetchMock = vi.fn<typeof fetch>(async (request, init) => {
       expect(String(request)).toBe('https://firecrawl.fixture.test/v2/scrape')
       expect(new Headers(init?.headers).get('authorization')).toBe('Bearer firecrawl-secret')
@@ -541,6 +541,7 @@ describe('remote extraction composition', () => {
     })
 
     const result = await extractor.extract({
+      provider: 'firecrawl_scrape',
       format: 'markdown',
       signal: new AbortController().signal,
       url: 'https://example.test/article',
@@ -554,20 +555,15 @@ describe('remote extraction composition', () => {
       statusCode: 200,
     })
     expect(result.attempts).toEqual([
-      expect.objectContaining({
-        outcome: 'skipped',
-        provider: 'tavily_extract',
-        skipReason: 'not_configured',
-      }),
       expect.objectContaining({ outcome: 'success', provider: 'firecrawl_scrape' }),
     ])
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(credentialFixture.resolve).toHaveBeenCalledTimes(2)
+    expect(credentialFixture.resolve).toHaveBeenCalledTimes(1)
     expect(JSON.stringify(result)).not.toContain('firecrawl-secret')
     expect(JSON.stringify(result)).not.toContain('direct_http_content')
   })
 
-  it('continues through Tavily and Firecrawl challenge content to the next route', async () => {
+  it('stops at Tavily challenge content without trying other Providers', async () => {
     const challenge = '<title>Just a moment...</title><script src="/cdn-cgi/challenge-platform/scripts/jsd/main.js"></script>anti-bot-remote-secret'
     const credentialFixture = credentials(['tavily-secret', 'firecrawl-secret'])
     const fetchMock = vi.fn<typeof fetch>(async request => {
@@ -610,32 +606,13 @@ describe('remote extraction composition', () => {
       now: () => 100,
     })
 
-    const result = await extractor.extract({
-      format: 'markdown',
-      signal: new AbortController().signal,
-      url: 'https://example.test/article',
-    })
-
-    expect(result).toMatchObject({
-      content: 'safe smart fallback content',
-      retrievalRoute: 'smart_direct',
-    })
-    expect(result.attempts).toEqual([
-      expect.objectContaining({
-        errorKind: 'unavailable',
-        outcome: 'failed',
-        provider: 'tavily_extract',
-      }),
-      expect.objectContaining({
-        errorKind: 'unavailable',
-        outcome: 'failed',
-        provider: 'firecrawl_scrape',
-      }),
-      expect.objectContaining({ outcome: 'success', provider: 'smart_direct' }),
-    ])
-    expect(fetchMock).toHaveBeenCalledTimes(2)
-    expect(smartExtract).toHaveBeenCalledTimes(1)
+    const error = await extractor.extract({
+      provider: 'tavily_extract', format: 'markdown', signal: new AbortController().signal, url: 'https://example.test/article',
+    }).catch(error => error)
+    expect(error.routeStatuses).toEqual([expect.objectContaining({ errorKind: 'unavailable', outcome: 'failed', provider: 'tavily_extract' })])
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(smartExtract).not.toHaveBeenCalled()
     expect(directExtract).not.toHaveBeenCalled()
-    expect(JSON.stringify(result)).not.toContain('anti-bot-remote-secret')
+    expect(JSON.stringify(error)).not.toContain('anti-bot-remote-secret')
   })
 })

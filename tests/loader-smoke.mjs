@@ -12,7 +12,7 @@ const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)))
 const dshHome = await mkdtemp(join(tmpdir(), 'dsh-search-enhance-'))
 const exampleConfig = join(packageRoot, 'examples/headless/cordis.yml')
 const loaderConfig = join(dshHome, 'cordis.yml')
-const selfLink = join(packageRoot, 'node_modules', '@kkkneko/dsh-search-enhance')
+const selfLink = join(packageRoot, 'node_modules', 'dsh-search-enhance')
 const credentialNames = [
   'SEARCH_API_KEY',
   'CONTEXT7_API_KEY',
@@ -151,9 +151,9 @@ try {
   }
 
   const configuredExample = (await readFile(exampleConfig, 'utf8')).replace(
-    "- id: search-enhance\n  name: '@kkkneko/dsh-search-enhance'",
+    "- id: search-enhance\n  name: 'dsh-search-enhance'",
     `- id: search-enhance
-  name: '@kkkneko/dsh-search-enhance'
+  name: 'dsh-search-enhance'
   config:
     webExtract:
       smartDirect:
@@ -181,12 +181,12 @@ try {
     import('@deepseek-ai/dsh-app-boot'),
     import(pathToFileURL(join(packageRoot, 'lib/index.js')).href),
     import(pathToFileURL(join(packageRoot, 'lib/config.js')).href),
-    import('@kkkneko/dsh-search-enhance/provider-runtime'),
-    import('@kkkneko/dsh-search-enhance/search'),
-    import('@kkkneko/dsh-search-enhance/providers/search-api'),
-    import('@kkkneko/dsh-search-enhance/orchestration'),
-    import('@kkkneko/dsh-search-enhance/documentation'),
-    import('@kkkneko/dsh-search-enhance/source-storage'),
+    import('dsh-search-enhance/provider-runtime'),
+    import('dsh-search-enhance/search'),
+    import('dsh-search-enhance/providers/search-api'),
+    import('dsh-search-enhance/orchestration'),
+    import('dsh-search-enhance/documentation'),
+    import('dsh-search-enhance/source-storage'),
     import('@deepseek-ai/dsh-scope'),
     import('@deepseek-ai/dsh-session'),
     import('@deepseek-ai/dsh-system-prompt'),
@@ -219,7 +219,7 @@ try {
   assert.equal(ctx.loader.unwrapExports(pluginModule), pluginModule)
   await ctx.loader.await()
   const pluginEntry = [...ctx.loader.entries()].find(
-    (entry) => entry.options.name === '@kkkneko/dsh-search-enhance',
+    (entry) => entry.options.name === 'dsh-search-enhance',
   )
   assert.ok(pluginEntry?.fiber, 'Loader did not create the package fiber')
   await pluginEntry.fiber.await()
@@ -242,7 +242,7 @@ try {
   )
   assert.deepEqual(
     Object.keys(schemaByName('web_extract').parameters.properties),
-    ['url', 'format'],
+    ['url', 'provider', 'format'],
   )
   assert.deepEqual(schemaByName('search_tools').parameters, {
     type: 'object',
@@ -515,7 +515,7 @@ try {
   const activeWebExtract = tools.execute({
     callId: 'loader-web-extract-active',
     name: 'web_extract',
-    arguments: { url: `${fixtureOrigin}/slow-json`, format: 'json' },
+    arguments: { url: `${fixtureOrigin}/slow-json`, format: 'json', provider: 'direct' },
     signal: new AbortController().signal,
   })
   await waitFor(() => slowRequests === 1, 'root web_extract did not dispatch direct HTTP')
@@ -589,7 +589,7 @@ try {
   const restartedWebExtract = await tools.execute({
     callId: 'loader-web-extract-restarted',
     name: 'web_extract',
-    arguments: { url: `${fixtureOrigin}/json`, format: 'json' },
+    arguments: { url: `${fixtureOrigin}/json`, format: 'json', provider: 'direct' },
     signal: new AbortController().signal,
   })
   assert.equal(restartedWebExtract.isError, false)

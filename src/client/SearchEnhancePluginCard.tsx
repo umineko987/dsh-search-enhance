@@ -7,7 +7,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from 'react'
-import { Button, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, Menu, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 
 import {
@@ -16,7 +16,8 @@ import {
   WEB_CREDENTIAL_SLOTS,
   WEB_CREDENTIAL_VALUE_MAX_CHARACTERS,
   WEB_EDITABLE_PATHS,
-  WEB_EXTRA_DISCOVERY_PROFILES,
+  WEB_SUPPLEMENTAL_SEARCH_PROVIDERS,
+  WEB_EXTRACT_PROVIDER_KEYS,
   WEB_MODEL_MAX_CHARACTERS,
   type WebConfigLayer,
   type WebConfigSnapshot,
@@ -105,8 +106,6 @@ const controlStyle: CSSProperties = {
   fontSize: 13,
 }
 const noteStyle: CSSProperties = { ...bodyStyle, padding: '9px 10px', borderRadius: 8, background: 'var(--dsw-alias-bg-layer-1)' }
-const detailsStyle: CSSProperties = { border: '1px solid var(--dsw-alias-border-l2)', borderRadius: 8, padding: '10px 12px' }
-const summaryStyle: CSSProperties = { cursor: 'pointer', fontSize: 13, fontWeight: 600, color: 'var(--dsw-alias-label-primary)' }
 const credentialListStyle: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 10 }
 const credentialStyle: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 9, padding: 12, border: '1px solid var(--dsw-alias-border-l2)', borderRadius: 8 }
 const credentialHeaderStyle: CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }
@@ -123,7 +122,7 @@ function cloneConfig(config: WebEditableConfig): WebEditableConfig {
     defaultDepth: config.defaultDepth,
     toolTimeoutMs: config.toolTimeoutMs,
     toolDiscovery: { ...config.toolDiscovery },
-    extraDiscoverySources: { ...config.extraDiscoverySources },
+    supplementalSearch: { ...config.supplementalSearch },
     searchApi: { ...config.searchApi },
     providers: {
       context7: { ...config.providers.context7 },
@@ -132,19 +131,21 @@ function cloneConfig(config: WebEditableConfig): WebEditableConfig {
       firecrawl: { ...config.providers.firecrawl },
     },
     webExtract: {
+      tavily: { ...config.webExtract.tavily },
+      firecrawl: { ...config.webExtract.firecrawl },
       smartDirect: { ...config.webExtract.smartDirect },
       direct: { ...config.webExtract.direct },
     },
   }
 }
 
-function scalarAt(value: unknown, path: readonly string[]): string | number | undefined {
+function scalarAt(value: unknown, path: readonly string[]): string | number | boolean | undefined {
   let current = value
   for (const part of path) {
     if (typeof current !== 'object' || current === null || Array.isArray(current)) return undefined
     current = (current as Record<string, unknown>)[part]
   }
-  return typeof current === 'string' || typeof current === 'number' ? current : undefined
+  return typeof current === 'string' || typeof current === 'number' || typeof current === 'boolean' ? current : undefined
 }
 
 function mutationsFor(current: WebEditableConfig, draft: WebEditableConfig): WebSettingsMutation[] {
@@ -174,11 +175,9 @@ function validTimeouts(config: WebEditableConfig): boolean {
   ].every(positiveInteger)
 }
 
-function validExtraDiscoverySources(config: WebEditableConfig, maximum: number): boolean {
-  return WEB_EXTRA_DISCOVERY_PROFILES.every(profile => {
-    const value = config.extraDiscoverySources[profile]
-    return Number.isInteger(value) && value >= 0 && value <= maximum
-  })
+function validSupplementalSearch(config: WebEditableConfig, maximum: number): boolean {
+  const value = config.supplementalSearch.maxSourcesPerProvider
+  return Number.isInteger(value) && value > 0 && value <= maximum
 }
 
 function credentialRef(config: WebEditableConfig, slot: WebCredentialSlot): string {
@@ -195,7 +194,7 @@ function Field({
   label: string
   overridden: boolean
   t: Translate
-  hint?: string
+  hint?: string | undefined
   children: ReactNode
 }) {
   return (
@@ -225,6 +224,45 @@ function Select({ value, options, onChange, disabled }: {
     >
       {options.map(option => <option key={option} value={option}>{option}</option>)}
     </select>
+  )
+}
+
+function ProviderSelect<Provider extends SearchEnhanceLocaleKey>({ label, providers, selected, onToggle, disabled, t }: {
+  label: string
+  providers: readonly Provider[]
+  selected: readonly Provider[]
+  onToggle(provider: Provider): void
+  disabled: boolean
+  t: Translate
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <Menu
+      open={open && !disabled}
+      portal
+      autoFocus
+      selectedIds={selected}
+      items={providers.map(provider => ({ id: provider, label: t(provider) }))}
+      onSelect={id => {
+        const provider = providers.find(value => value === id)
+        if (provider !== undefined) onToggle(provider)
+      }}
+      onClose={() => { setOpen(false) }}
+      anchor={(
+        <button
+          type="button"
+          aria-label={label}
+          aria-haspopup="menu"
+          aria-expanded={open && !disabled}
+          disabled={disabled}
+          style={{ ...controlStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, textAlign: 'left' }}
+          onClick={() => { setOpen(current => !current) }}
+        >
+          <span>{selected.length === 0 ? t('selectProviders') : selected.map(provider => t(provider)).join(', ')}</span>
+          <span aria-hidden="true">⌄</span>
+        </button>
+      )}
+    />
   )
 }
 
@@ -259,48 +297,45 @@ function ProviderEditor({
   t,
   onChange,
 }: {
-  provider: ProviderId
+  provider: WebCredentialSlot
   value: WebDiscoveryProviderConfig
   disabled: boolean
   user: WebConfigLayer | undefined
   t: Translate
   onChange(value: WebDiscoveryProviderConfig): void
 }) {
-  const prefix = ['providers', provider] as const
+  const prefix = provider === 'searchApi' ? ['searchApi'] : ['providers', provider]
   return (
-    <section style={sectionDividerStyle} aria-labelledby={`${provider}-provider-title`}>
-      <h4 id={`${provider}-provider-title`} style={headingStyle}>{t(CREDENTIAL_NAME_KEYS[provider])}</h4>
-      <div style={gridStyle}>
-        <Field label={t('baseUrl')} overridden={isOverridden(user, [...prefix, 'baseUrl'])} t={t}>
-          <input
-            aria-label={`${t(CREDENTIAL_NAME_KEYS[provider])} ${t('baseUrl')}`}
-            style={controlStyle}
-            value={value.baseUrl}
-            maxLength={WEB_BASE_URL_MAX_CHARACTERS}
-            disabled={disabled}
-            onChange={event => { onChange({ ...value, baseUrl: event.currentTarget.value }) }}
-          />
-        </Field>
-        <Field label={t('timeoutMs')} overridden={isOverridden(user, [...prefix, 'timeoutMs'])} t={t}>
-          <NumberInput
-            label={`${t(CREDENTIAL_NAME_KEYS[provider])} ${t('timeoutMs')}`}
-            value={value.timeoutMs}
-            disabled={disabled}
-            onChange={timeoutMs => { onChange({ ...value, timeoutMs }) }}
-          />
-        </Field>
-        <Field label={t('credentialRef')} overridden={isOverridden(user, [...prefix, 'credentialRef'])} t={t}>
-          <input
-            aria-label={`${t(CREDENTIAL_NAME_KEYS[provider])} ${t('credentialRef')}`}
-            style={controlStyle}
-            value={value.credentialRef}
-            maxLength={WEB_CREDENTIAL_REF_MAX_CHARACTERS}
-            disabled={disabled}
-            onChange={event => { onChange({ ...value, credentialRef: event.currentTarget.value }) }}
-          />
-        </Field>
-      </div>
-    </section>
+    <div style={gridStyle}>
+      <Field label={t('baseUrl')} overridden={isOverridden(user, [...prefix, 'baseUrl'])} t={t} hint={provider === 'searchApi' ? t('thirdPartyHint') : undefined}>
+        <input
+          aria-label={`${t(CREDENTIAL_NAME_KEYS[provider])} ${t('baseUrl')}`}
+          style={controlStyle}
+          value={value.baseUrl}
+          maxLength={WEB_BASE_URL_MAX_CHARACTERS}
+          disabled={disabled}
+          onChange={event => { onChange({ ...value, baseUrl: event.currentTarget.value }) }}
+        />
+      </Field>
+      <Field label={t('timeoutMs')} overridden={isOverridden(user, [...prefix, 'timeoutMs'])} t={t}>
+        <NumberInput
+          label={`${t(CREDENTIAL_NAME_KEYS[provider])} ${t('timeoutMs')}`}
+          value={value.timeoutMs}
+          disabled={disabled}
+          onChange={timeoutMs => { onChange({ ...value, timeoutMs }) }}
+        />
+      </Field>
+      <Field label={t('credentialRef')} overridden={isOverridden(user, [...prefix, 'credentialRef'])} t={t}>
+        <input
+          aria-label={`${t(CREDENTIAL_NAME_KEYS[provider])} ${t('credentialRef')}`}
+          style={controlStyle}
+          value={value.credentialRef}
+          maxLength={WEB_CREDENTIAL_REF_MAX_CHARACTERS}
+          disabled={disabled}
+          onChange={event => { onChange({ ...value, credentialRef: event.currentTarget.value }) }}
+        />
+      </Field>
+    </div>
   )
 }
 
@@ -357,31 +392,34 @@ export function SearchEnhancePluginCard({ t }: SearchEnhancePluginCardProps) {
   const valid = draft !== undefined
     && snapshot !== undefined
     && validTimeouts(draft)
-    && validExtraDiscoverySources(draft, snapshot.options.extraDiscoveryMaxSources)
+    && validSupplementalSearch(draft, snapshot.options.supplementalSearchMaxSources)
   const editable = phase === 'ready' && snapshot?.writable === true && !saving
 
-  const updateProvider = (provider: ProviderId, value: WebDiscoveryProviderConfig): void => {
-    setDraft(current => current === undefined ? current : {
+  const updateProvider = (provider: WebCredentialSlot, value: WebDiscoveryProviderConfig): void => {
+    setDraft(current => current === undefined ? current : provider === 'searchApi' ? {
+      ...current,
+      searchApi: { ...current.searchApi, ...value },
+    } : {
       ...current,
       providers: { ...current.providers, [provider]: value },
     })
     setFeedback('idle')
   }
 
-  const updateExtraDiscovery = (profile: typeof WEB_EXTRA_DISCOVERY_PROFILES[number], value: number): void => {
+  const updateSupplementalSearch = (value: Partial<WebEditableConfig['supplementalSearch']>): void => {
     setDraft(current => current === undefined ? current : {
       ...current,
-      extraDiscoverySources: { ...current.extraDiscoverySources, [profile]: value },
+      supplementalSearch: { ...current.supplementalSearch, ...value },
     })
     setFeedback('idle')
   }
 
-  const updateProxy = (route: keyof WebEditableConfig['webExtract'], proxyUrl: string): void => {
+  const updateProxy = (route: 'smartDirect' | 'direct', proxyUrl: string): void => {
     setDraft(current => current === undefined ? current : {
       ...current,
       webExtract: {
         ...current.webExtract,
-        [route]: { proxyUrl },
+        [route]: { ...current.webExtract[route], proxyUrl },
       },
     })
     setFeedback('idle')
@@ -492,23 +530,6 @@ export function SearchEnhancePluginCard({ t }: SearchEnhancePluginCardProps) {
                 </div>
                 <p style={noteStyle}>{t('independentNote')}</p>
                 <div style={gridStyle}>
-                  <Field label={t('baseUrl')} overridden={isOverridden(snapshot.user, ['searchApi', 'baseUrl'])} t={t} hint={t('thirdPartyHint')}>
-                    <input
-                      aria-label={t('baseUrl')}
-                      style={controlStyle}
-                      value={draft.searchApi.baseUrl}
-                      maxLength={WEB_BASE_URL_MAX_CHARACTERS}
-                      disabled={!editable}
-                      onChange={event => {
-                        const baseUrl = event.currentTarget.value
-                        setDraft(current => current === undefined ? current : {
-                          ...current,
-                          searchApi: { ...current.searchApi, baseUrl },
-                        })
-                        setFeedback('idle')
-                      }}
-                    />
-                  </Field>
                   <Field label={t('protocol')} overridden={isOverridden(snapshot.user, ['searchApi', 'protocol'])} t={t}>
                     <Select
                       value={draft.searchApi.protocol}
@@ -549,37 +570,6 @@ export function SearchEnhancePluginCard({ t }: SearchEnhancePluginCardProps) {
                         setDraft(current => current === undefined ? current : {
                           ...current,
                           searchApi: { ...current.searchApi, thinkingLevel },
-                        })
-                        setFeedback('idle')
-                      }}
-                    />
-                  </Field>
-                  <Field label={t('timeoutMs')} overridden={isOverridden(snapshot.user, ['searchApi', 'timeoutMs'])} t={t}>
-                    <NumberInput
-                      label={`Grok ${t('timeoutMs')}`}
-                      value={draft.searchApi.timeoutMs}
-                      disabled={!editable}
-                      onChange={timeoutMs => {
-                        setDraft(current => current === undefined ? current : {
-                          ...current,
-                          searchApi: { ...current.searchApi, timeoutMs },
-                        })
-                        setFeedback('idle')
-                      }}
-                    />
-                  </Field>
-                  <Field label={t('credentialRef')} overridden={isOverridden(snapshot.user, ['searchApi', 'credentialRef'])} t={t}>
-                    <input
-                      aria-label={`Grok ${t('credentialRef')}`}
-                      style={controlStyle}
-                      value={draft.searchApi.credentialRef}
-                      maxLength={WEB_CREDENTIAL_REF_MAX_CHARACTERS}
-                      disabled={!editable}
-                      onChange={event => {
-                        const credentialRef = event.currentTarget.value
-                        setDraft(current => current === undefined ? current : {
-                          ...current,
-                          searchApi: { ...current.searchApi, credentialRef },
                         })
                         setFeedback('idle')
                       }}
@@ -634,71 +624,70 @@ export function SearchEnhancePluginCard({ t }: SearchEnhancePluginCardProps) {
                   <h3 id="search-enhance-extra-sources-heading" style={headingStyle}>{t('extraSourcesHeading')}</h3>
                   <p style={{ ...bodyStyle, marginTop: 4 }}>{t('extraSourcesIntro')}</p>
                 </div>
-                <div style={gridStyle}>
-                  {WEB_EXTRA_DISCOVERY_PROFILES.map(profile => (
-                    <Field
-                      key={profile}
-                      label={profile}
-                      overridden={isOverridden(snapshot.user, ['extraDiscoverySources', profile])}
-                      t={t}
-                    >
-                      <NumberInput
-                        label={`${t('extraSourcesHeading')} ${profile}`}
-                        value={draft.extraDiscoverySources[profile]}
-                        min={0}
-                        max={snapshot.options.extraDiscoveryMaxSources}
-                        disabled={!editable}
-                        onChange={value => { updateExtraDiscovery(profile, value) }}
-                      />
-                    </Field>
-                  ))}
+                <div style={{ ...gridStyle, alignItems: 'end' }}>
+                  <ProviderSelect
+                    label={t('extraSourcesHeading')}
+                    providers={WEB_SUPPLEMENTAL_SEARCH_PROVIDERS}
+                    selected={WEB_SUPPLEMENTAL_SEARCH_PROVIDERS.filter(provider => draft.supplementalSearch[provider])}
+                    disabled={!editable}
+                    t={t}
+                    onToggle={provider => { updateSupplementalSearch({ [provider]: !draft.supplementalSearch[provider] }) }}
+                  />
+                  <Field label={t('maxSourcesPerProvider')} overridden={isOverridden(snapshot.user, ['supplementalSearch', 'maxSourcesPerProvider'])} t={t}>
+                    <NumberInput
+                      label={t('maxSourcesPerProvider')}
+                      value={draft.supplementalSearch.maxSourcesPerProvider}
+                      min={1}
+                      max={snapshot.options.supplementalSearchMaxSources}
+                      disabled={!editable}
+                      onChange={value => { updateSupplementalSearch({ maxSourcesPerProvider: value }) }}
+                    />
+                  </Field>
                 </div>
               </section>
 
-              <section style={sectionDividerStyle} aria-labelledby="search-enhance-providers-heading">
-                <div>
-                  <h3 id="search-enhance-providers-heading" style={headingStyle}>{t('providersHeading')}</h3>
-                  <p style={{ ...bodyStyle, marginTop: 4 }}>{t('providersIntro')}</p>
-                </div>
-                <details style={detailsStyle}>
-                  <summary style={summaryStyle}>{t('providersSummary')}</summary>
-                  {PROVIDERS.map(provider => (
-                    <ProviderEditor
-                      key={provider}
-                      provider={provider}
-                      value={draft.providers[provider]}
-                      disabled={!editable}
-                      user={snapshot.user}
-                      t={t}
-                      onChange={value => { updateProvider(provider, value) }}
-                    />
-                  ))}
-                  <section style={sectionDividerStyle} aria-labelledby="search-enhance-proxy-heading">
-                    <h4 id="search-enhance-proxy-heading" style={headingStyle}>{t('proxyHeading')}</h4>
-                    <p style={bodyStyle}>{t('proxyIntro')}</p>
-                    <div style={gridStyle}>
-                      {PROXY_ROUTES.map(([route, label]) => (
-                        <Field
-                          key={route}
-                          label={t(label)}
-                          overridden={isOverridden(snapshot.user, ['webExtract', route, 'proxyUrl'])}
-                          t={t}
-                        >
-                          <input
-                            aria-label={t(label)}
-                            style={controlStyle}
-                            value={draft.webExtract[route].proxyUrl}
-                            maxLength={snapshot.options.proxyUrlMaxCharacters}
-                            placeholder="http://127.0.0.1:7890"
-                            disabled={!editable}
-                            onChange={event => { updateProxy(route, event.currentTarget.value) }}
-                          />
-                        </Field>
-                      ))}
-                    </div>
-                    <p style={noteStyle}>{t('proxyHint')}</p>
-                  </section>
-                </details>
+              <section style={sectionDividerStyle} aria-labelledby="search-enhance-extract-heading">
+                <h3 id="search-enhance-extract-heading" style={headingStyle}>{t('extractHeading')}</h3>
+                <p style={bodyStyle}>{t('extractIntro')}</p>
+                <ProviderSelect
+                  label={t('extractHeading')}
+                  providers={WEB_EXTRACT_PROVIDER_KEYS}
+                  selected={WEB_EXTRACT_PROVIDER_KEYS.filter(provider => draft.webExtract[provider].enabled)}
+                  disabled={!editable}
+                  t={t}
+                  onToggle={provider => {
+                    setDraft(current => current === undefined ? current : {
+                      ...current,
+                      webExtract: { ...current.webExtract, [provider]: { ...current.webExtract[provider], enabled: !current.webExtract[provider].enabled } },
+                    })
+                    setFeedback('idle')
+                  }}
+                />
+                <section style={sectionStyle} aria-labelledby="search-enhance-proxy-heading">
+                  <h4 id="search-enhance-proxy-heading" style={headingStyle}>{t('proxyHeading')}</h4>
+                  <p style={bodyStyle}>{t('proxyIntro')}</p>
+                  <div style={gridStyle}>
+                    {PROXY_ROUTES.map(([route, label]) => (
+                      <Field
+                        key={route}
+                        label={t(label)}
+                        overridden={isOverridden(snapshot.user, ['webExtract', route, 'proxyUrl'])}
+                        t={t}
+                      >
+                        <input
+                          aria-label={t(label)}
+                          style={controlStyle}
+                          value={draft.webExtract[route].proxyUrl}
+                          maxLength={snapshot.options.proxyUrlMaxCharacters}
+                          placeholder="http://127.0.0.1:7890"
+                          disabled={!editable}
+                          onChange={event => { updateProxy(route, event.currentTarget.value) }}
+                        />
+                      </Field>
+                    ))}
+                  </div>
+                  <p style={noteStyle}>{t('proxyHint')}</p>
+                </section>
               </section>
 
               <section style={sectionDividerStyle} aria-labelledby="search-enhance-credentials-heading">
@@ -726,6 +715,14 @@ export function SearchEnhancePluginCard({ t }: SearchEnhancePluginCardProps) {
                             {!state.available ? t('unavailable') : state.configured ? t('configured') : t('missing')}
                           </span>
                         </div>
+                        <ProviderEditor
+                          provider={slot}
+                          value={slot === 'searchApi' ? draft.searchApi : draft.providers[slot]}
+                          disabled={!editable}
+                          user={snapshot.user}
+                          t={t}
+                          onChange={value => { updateProvider(slot, value) }}
+                        />
                         {state.source === undefined ? null : <p style={bodyStyle}>{t('sourceLabel', { source: state.source })}</p>}
                         {refChanged ? <p style={errorStyle}>{t('saveConfigFirst')}</p> : null}
                         {!state.writable && state.available ? <p style={bodyStyle}>{t('credentialReadOnly')}</p> : null}

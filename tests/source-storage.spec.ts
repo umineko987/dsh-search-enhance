@@ -431,7 +431,7 @@ describe('owner, restored-session, and structured fork authorization', () => {
     }
   })
 
-  it('uses inherited successful tool/code-dispatch fields and rejects failed or text-only matches', async () => {
+  it('uses inherited successful tool/ptc-dispatch fields and rejects failed or text-only matches', async () => {
     const context = new Context()
     new SessionStore(context)
     try {
@@ -444,7 +444,7 @@ describe('owner, restored-session, and structured fork authorization', () => {
         candidate(),
         new AbortController().signal,
       )
-      owner.append('tool/code-dispatch', {
+      owner.append('tool/ptc-dispatch', {
         arguments: { query: 'React docs' },
         content: [{ type: 'text', text: `stored ${commit.sourceRef}` }],
         isError: false,
@@ -459,7 +459,7 @@ describe('owner, restored-session, and structured fork authorization', () => {
       expect(test.store.lookup(grandchild, commit.sourceRef)).toMatchObject({ state: 'found' })
 
       const failedParent = context.sessions.create(SessionId('failed-code-parent'))
-      failedParent.append('tool/code-dispatch', {
+      failedParent.append('tool/ptc-dispatch', {
         arguments: {},
         content: [{ type: 'text', text: commit.sourceRef }],
         isError: true,

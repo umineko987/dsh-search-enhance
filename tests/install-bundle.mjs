@@ -147,7 +147,7 @@ async function verifyWebStartup(env) {
     const headers = { cookie }
     const page = await fetch(origin, { headers, signal: AbortSignal.timeout(5_000) })
     assert.equal(page.status, 200, 'dsh web did not serve its UI')
-    assert.match(await page.text(), /@kkkneko\/dsh-search-enhance/u)
+    assert.match(await page.text(), /dsh-search-enhance/u)
     const config = await fetch(`${origin}/dsh-search-enhance/config`, { headers, signal: AbortSignal.timeout(5_000) })
     assert.equal(config.status, 200, 'Search Enhance settings route did not activate')
     assert.equal((await config.json()).namespace, 'search-enhance')
@@ -163,6 +163,13 @@ async function verifyWebStartup(env) {
 async function readManifest(profileDir) {
   return JSON.parse(await readFile(join(profileDir, 'package.json'), 'utf8'))
 }
+
+const dshVersion = await run('dsh', ['--version'], {
+  cwd: packageRoot,
+  env: process.env,
+  label: 'dsh --version',
+})
+assert.equal(dshVersion.stdout.trim(), '0.1.5-rc.2', 'install acceptance requires DSH 0.1.5-rc.2')
 
 const dshHome = await mkdtemp(join(tmpdir(), 'dsh-search-enhance-install-'))
 const profileDir = join(dshHome, 'profiles', profileName)
@@ -193,10 +200,10 @@ try {
   })
 
   const installed = await readManifest(profileDir)
-  const dependency = installed.dependencies?.['@kkkneko/dsh-search-enhance']
+  const dependency = installed.dependencies?.['dsh-search-enhance']
   assert.equal(typeof dependency, 'string')
   assert.match(dependency, /^file:.*\.tgz$/u, 'profile dependency is not the packed npm artifact')
-  assert.ok(installed.dsh?.profile?.bundles?.includes('@kkkneko/dsh-search-enhance'))
+  assert.ok(installed.dsh?.profile?.bundles?.includes('dsh-search-enhance'))
 
   const addedDump = await run('dsh', ['--profile', profileName, '--dump-config'], {
     cwd: packageRoot,
@@ -204,18 +211,18 @@ try {
     label: 'dsh --dump-config after add',
   })
   const addedConfig = `${addedDump.stdout}\n${addedDump.stderr}`
-  assert.match(addedConfig, /^# == @kkkneko\/dsh-search-enhance(?:\s|$)/m)
-  assert.match(addedConfig, /^\s*name:\s*["']?@kkkneko\/dsh-search-enhance["']?\s*$/m)
+  assert.match(addedConfig, /^# == dsh-search-enhance(?:\s|$)/m)
+  assert.match(addedConfig, /^\s*name:\s*["']?dsh-search-enhance["']?\s*$/m)
 
   const profileRequire = createRequire(join(profileDir, 'package.json'))
-  const resolvedEntry = profileRequire.resolve('@kkkneko/dsh-search-enhance')
-  const installedRoot = dirname(profileRequire.resolve('@kkkneko/dsh-search-enhance/package.json'))
+  const resolvedEntry = profileRequire.resolve('dsh-search-enhance')
+  const installedRoot = dirname(profileRequire.resolve('dsh-search-enhance/package.json'))
   assert.notEqual(await realpath(installedRoot), packageRoot, 'installation resolved back to the checkout')
   assert.equal(resolvedEntry, join(installedRoot, 'lib/index.js'))
-  const resolvedClient = profileRequire.resolve('@kkkneko/dsh-search-enhance/client')
+  const resolvedClient = profileRequire.resolve('dsh-search-enhance/client')
   assert.equal(resolvedClient, join(installedRoot, 'client/client.js'))
-  assert.match(await readFile(resolvedClient, 'utf8'), /^window\.__ModuleLoader__\.load\(\{\s*id: "@kkkneko\/dsh-search-enhance"/u)
-  const installedPackage = JSON.parse(await readFile(profileRequire.resolve('@kkkneko/dsh-search-enhance/package.json'), 'utf8'))
+  assert.match(await readFile(resolvedClient, 'utf8'), /^window\.__ModuleLoader__\.load\(\{\s*id: "dsh-search-enhance"/u)
+  const installedPackage = JSON.parse(await readFile(profileRequire.resolve('dsh-search-enhance/package.json'), 'utf8'))
   assert.deepEqual(installedPackage.dsh.client, {
     inject: [
       '@deepseek-ai/dsh-client-locale',
@@ -231,23 +238,23 @@ try {
 
   await verifyWebStartup(childEnvironment)
 
-  await run('dsh', ['plugin', '--profile', profileName, 'remove', '@kkkneko/dsh-search-enhance'], {
+  await run('dsh', ['plugin', '--profile', profileName, 'remove', 'dsh-search-enhance'], {
     cwd: packageRoot,
     env: childEnvironment,
     label: 'dsh plugin remove',
   })
 
   const removed = await readManifest(profileDir)
-  assert.equal(removed.dependencies?.['@kkkneko/dsh-search-enhance'], undefined)
-  assert.equal(removed.dsh?.profile?.bundles?.includes('@kkkneko/dsh-search-enhance'), false)
+  assert.equal(removed.dependencies?.['dsh-search-enhance'], undefined)
+  assert.equal(removed.dsh?.profile?.bundles?.includes('dsh-search-enhance'), false)
   const removedDump = await run('dsh', ['--profile', profileName, '--dump-config'], {
     cwd: packageRoot,
     env: childEnvironment,
     label: 'dsh --dump-config after remove',
   })
   const removedConfig = `${removedDump.stdout}\n${removedDump.stderr}`
-  assert.doesNotMatch(removedConfig, /^# == @kkkneko\/dsh-search-enhance(?:\s|$)/m)
-  assert.doesNotMatch(removedConfig, /^\s*name:\s*["']?@kkkneko\/dsh-search-enhance["']?\s*$/m)
+  assert.doesNotMatch(removedConfig, /^# == dsh-search-enhance(?:\s|$)/m)
+  assert.doesNotMatch(removedConfig, /^\s*name:\s*["']?dsh-search-enhance["']?\s*$/m)
 
   process.stdout.write('bundle install acceptance: ok (npm tarball, isolated DSH_HOME add/dump/import/client/web startup/remove)\n')
 } finally {

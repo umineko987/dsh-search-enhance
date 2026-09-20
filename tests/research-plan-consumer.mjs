@@ -13,7 +13,7 @@ const snapshotPath = join(packageRoot, 'tests/snapshots/research-plan-consumer.j
 const packageJsonUrl = pathToFileURL(join(packageRoot, 'package.json')).href
 const dshHome = await mkdtemp(join(tmpdir(), 'dsh-search-enhance-research-plan-'))
 const loaderConfig = join(dshHome, 'cordis.yml')
-const selfLink = join(packageRoot, 'node_modules', '@kkkneko/dsh-search-enhance')
+const selfLink = join(packageRoot, 'node_modules', 'dsh-search-enhance')
 const secret = 'research-plan-loader-secret-value'
 const globalDefinitions = [
   'docs_search',
@@ -113,7 +113,7 @@ function loaderText() {
   config:
     watch: false
 - id: search-enhance
-  name: '@kkkneko/dsh-search-enhance'
+  name: 'dsh-search-enhance'
   config:
     toolDiscovery:
       mode: all
@@ -156,7 +156,7 @@ function eventSummary(session) {
         ...(event.data.meta === undefined ? {} : { meta: event.data.meta }),
       }]
     }
-    if (event.type === 'tool/code-dispatch-start' || event.type === 'tool/code-dispatch') {
+    if (event.type === 'tool/ptc-dispatch-start' || event.type === 'tool/ptc-dispatch') {
       return [{
         type: event.type,
         data: {
@@ -165,7 +165,7 @@ function eventSummary(session) {
           subCallId: String(event.data.subCallId),
           name: event.data.name,
           arguments: parseArguments(event.data.arguments),
-          ...(event.type === 'tool/code-dispatch'
+          ...(event.type === 'tool/ptc-dispatch'
             ? { isError: event.data.isError, content: event.data.content }
             : {}),
         },
@@ -242,7 +242,7 @@ try {
   )
   await ctx.loader.await()
   const pluginEntry = [...ctx.loader.entries()].find(
-    entry => entry.options.name === '@kkkneko/dsh-search-enhance',
+    entry => entry.options.name === 'dsh-search-enhance',
   )
   assert.ok(pluginEntry?.fiber, 'Loader did not create the research-plan fiber')
   await pluginEntry.fiber.await()
@@ -347,10 +347,10 @@ try {
   assert.equal(replayCard?.card, 'generic')
 
   const codeDispatches = eventSummary(codeHandle.agent.session)
-    .filter(event => event.type === 'tool/code-dispatch' || event.type === 'tool/code-dispatch-start')
+    .filter(event => event.type === 'tool/ptc-dispatch' || event.type === 'tool/ptc-dispatch-start')
   assert.deepEqual(codeDispatches.map(event => event.type), [
-    'tool/code-dispatch-start',
-    'tool/code-dispatch',
+    'tool/ptc-dispatch-start',
+    'tool/ptc-dispatch',
   ])
   assert.equal(codeDispatches[1].data.name, 'search_call')
   assert.equal('meta' in codeDispatches[1].data, false)

@@ -25,7 +25,6 @@ import {
   type ResolvedSearchStrategy,
 } from '../search/index.js'
 import { extractMarkdownCitationUrls } from '../search/parse.js'
-import { shouldEnhanceDocumentation, splitDiscoveryBudget } from './policy.js'
 import type {
   SearchCanonicalResult,
   SearchOrchestrationDiagnostics,
@@ -39,7 +38,6 @@ import type {
 
 const ORCHESTRATOR_PROVIDER = 'search-orchestrator'
 const PARTIAL_ANSWER = '主搜索失败，仅返回补充来源。'
-const DOCUMENTATION_LIMIT = 8
 
 type SourceSlotKey = 'exa' | 'tavily' | 'firecrawl'
 
@@ -126,7 +124,7 @@ function freezeDiagnostics(
     attempts: Object.freeze([...diagnostics.attempts]),
     routing: Object.freeze({
       ...diagnostics.routing,
-      discoveryAllocation: Object.freeze({ ...diagnostics.routing.discoveryAllocation }),
+      supplementalProviders: Object.freeze([...diagnostics.routing.supplementalProviders]),
     }),
   })
 }
@@ -346,7 +344,6 @@ function probeDuration(startedAt: number, now: () => number): number {
 
 function sourceAttempt(
   slot: SourceSlot,
-  mainFailed: boolean,
 ): ProviderAttemptRecord {
   if (slot.planningError !== undefined) {
     return createProviderAttemptRecord({
@@ -355,7 +352,7 @@ function sourceAttempt(
       durationMs: slot.planningDurationMs,
       error: slot.planningError,
       outcome: 'failed',
-      participatedInFallback: mainFailed,
+      participatedInFallback: false,
       provider: slot.key,
     })
   }
@@ -379,7 +376,7 @@ function sourceAttempt(
       durationMs: duration(slot.track),
       error: settled.reason,
       outcome: 'failed',
-      participatedInFallback: mainFailed,
+      participatedInFallback: false,
       provider: slot.key,
     })
   }
@@ -399,7 +396,7 @@ function sourceAttempt(
     capability: slot.capability,
     durationMs: duration(slot.track),
     outcome: 'success',
-    participatedInFallback: mainFailed,
+    participatedInFallback: false,
     provider: slot.key,
   })
 }
@@ -513,17 +510,12 @@ export class SearchOrchestrator {
     ]
 
     try {
-      const docsEnabled = config.fallbackMode === 'auto'
-        && shouldEnhanceDocumentation(strategy.profile, query)
-      const extraBudget = config.extraDiscoverySources[strategy.profile]
       const probeSlots: SourceSlot[] = []
       for (const slot of slots) {
-        if (slot.capability === 'docs_search') {
-          if (!docsEnabled) slot.skipReason = 'not_applicable'
-          else probeSlots.push(slot)
-        } else if (extraBudget === 0) {
-          slot.skipReason = 'budget_zero'
+        if (!config.supplementalSearch[slot.key]) {
+          slot.skipReason = 'disabled'
         } else {
+          slot.limit = Math.min(config.supplementalSearch.maxSourcesPerProvider, config.retention.providerMaxSources)
           probeSlots.push(slot)
         }
       }
@@ -551,30 +543,6 @@ export class SearchOrchestrator {
       }
       throwIfAborted(signal)
       throwIfAborted(fanout.signal)
-
-      const tavilySlot = slots[1]
-      const firecrawlSlot = slots[2]
-      if (tavilySlot === undefined || firecrawlSlot === undefined) {
-        throw new Error('discovery slots are incomplete')
-      }
-      const allocation = splitDiscoveryBudget(
-        extraBudget,
-        tavilySlot.available && tavilySlot.planningError === undefined,
-        firecrawlSlot.available && firecrawlSlot.planningError === undefined,
-      )
-      for (const slot of slots) {
-        if (slot.capability === 'docs_search' && slot.available) {
-          slot.limit = Math.min(strategy.maxCollectedSources, DOCUMENTATION_LIMIT)
-        }
-      }
-      if (tavilySlot.available) {
-        tavilySlot.limit = allocation.tavily
-        if (allocation.tavily === 0) tavilySlot.skipReason = 'budget_zero'
-      }
-      if (firecrawlSlot.available) {
-        firecrawlSlot.limit = allocation.firecrawl
-        if (allocation.firecrawl === 0) firecrawlSlot.skipReason = 'budget_zero'
-      }
 
       const mainTrack = startTrackedTask<SearchApiSearchResult>(
         'search-api',
@@ -676,8 +644,17 @@ export class SearchOrchestrator {
           provider: 'search-api',
         }))
       }
+      if (mainSucceeded && mainSettled.value.nativeSearchReported === false) {
+        warnings.push(warning('native_search_unconfirmed', {
+          capability: 'main_search',
+          provider: 'search-api',
+        }))
+      }
       let providerTruncated = false
       for (const slot of slots) {
+        if (slot.skipReason === 'not_configured') {
+          warnings.push(warning('provider_not_configured', { capability: slot.capability, provider: slot.key }))
+        }
         if (slot.planningError !== undefined) {
           warnings.push(warning('provider_failed', {
             capability: slot.capability,
@@ -739,13 +716,12 @@ export class SearchOrchestrator {
       })
       const attempts = Object.freeze([
         mainAttempt,
-        ...slots.map(slot => sourceAttempt(slot, !mainSucceeded)),
+        ...slots.map(slot => sourceAttempt(slot)),
       ])
       const routing: SearchRoutingDecision = Object.freeze({
         depth: strategy.depth,
-        discoveryAllocation: allocation,
-        documentationEnhancement: docsEnabled,
-        extraDiscoveryBudget: extraBudget,
+        supplementalProviders: slots.filter(slot => config.supplementalSearch[slot.key]).map(slot => slot.key),
+        sourcesPerProvider: config.supplementalSearch.maxSourcesPerProvider,
         profile: strategy.profile,
       })
       const answer = limitedAnswer.text.length === 0 ? undefined : limitedAnswer.text

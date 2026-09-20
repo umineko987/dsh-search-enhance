@@ -19,7 +19,7 @@ const noopPath = join(packageRoot, 'tests/fixtures/noop.mjs')
 const dshHome = await mkdtemp(join(tmpdir(), 'dsh-search-enhance-presets-'))
 const presetRoot = join(dshHome, 'agent-presets')
 const loaderConfig = join(dshHome, 'cordis.yml')
-const selfLink = join(packageRoot, 'node_modules', '@kkkneko/dsh-search-enhance')
+const selfLink = join(packageRoot, 'node_modules', 'dsh-search-enhance')
 const previousDshHome = process.env.DSH_HOME
 const previousSearchKey = process.env.SEARCH_API_KEY
 const sockets = new Set()
@@ -172,7 +172,7 @@ try {
       - path: ${JSON.stringify(presetRoot)}
         trust: system
 - id: search-enhance
-  name: '@kkkneko/dsh-search-enhance'
+  name: 'dsh-search-enhance'
   config:
     fallbackMode: off
     searchApi:
@@ -186,8 +186,6 @@ try {
       maxDelayMs: 0
       maxTotalDelayMs: 0
       jitterRatio: 0
-    extraDiscoverySources:
-      auto: 0
 `, 'utf8')
 
   const [{ boot }, nativeWebSearchModule] = await Promise.all([
@@ -203,7 +201,7 @@ try {
     packageJsonUrl,
   )
   await ctx.loader.await()
-  const pluginEntry = [...ctx.loader.entries()].find(entry => entry.options.name === '@kkkneko/dsh-search-enhance')
+  const pluginEntry = [...ctx.loader.entries()].find(entry => entry.options.name === 'dsh-search-enhance')
   assert.ok(pluginEntry?.fiber, 'Loader did not create the search-enhance fiber')
   await pluginEntry.fiber.await()
 

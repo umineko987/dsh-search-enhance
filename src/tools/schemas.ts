@@ -448,6 +448,12 @@ export const WEB_EXTRACT_PARAMETERS = {
     required: true,
     description: 'A non-empty concrete HTTP(S) URL to read.',
   },
+  provider: {
+    type: 'string',
+    enum: WEB_EXTRACT_ROUTES,
+    required: true,
+    description: 'Choose exactly one Provider enabled in user settings. No automatic fallback.',
+  },
   format: {
     type: 'string',
     enum: WEB_EXTRACT_FORMATS,
@@ -828,6 +834,7 @@ const webExtractPlanParamsSchema = {
   properties: {
     url: { type: 'string', required: true },
     format: { type: 'string', const: 'markdown', required: true },
+    provider: { type: 'string', enum: WEB_EXTRACT_ROUTES },
   },
   additionalProperties: false,
 } as const satisfies ValueSchemaSpec

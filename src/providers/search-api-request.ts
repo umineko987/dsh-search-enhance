@@ -50,16 +50,22 @@ function validatedBaseUrl(baseUrl: string): string {
 }
 
 function baseWithoutTerminalSearchPath(baseUrl: string): string {
-  return validatedBaseUrl(baseUrl).replace(/\/+$/, '').replace(TERMINAL_SEARCH_PATH, '')
+  const base = validatedBaseUrl(baseUrl).replace(/\/+$/, '').replace(TERMINAL_SEARCH_PATH, '')
+  const url = new URL(base)
+  const provider = officialSearchApiProvider(url)
+  if (provider === 'xai' && url.pathname === '/') return `${base}/v1`
+  if (provider === 'openrouter') {
+    if (url.pathname === '/') return `${base}/api/v1`
+    if (url.pathname === '/api') return `${base}/v1`
+  }
+  return base
 }
 
 /** Resolve the protocol-specific request endpoint without duplicating a terminal API path. */
 export function searchApiEndpoint(baseUrl: string, protocol: SearchApiProtocol): string {
   const selected = exactEnum(SEARCH_API_PROTOCOLS, protocol, 'protocol')
   const terminal = selected === 'responses' ? '/responses' : '/chat/completions'
-  const base = validatedBaseUrl(baseUrl).replace(/\/+$/, '')
-  if (base.endsWith(terminal)) return base
-  return `${baseWithoutTerminalSearchPath(base)}${terminal}`
+  return `${baseWithoutTerminalSearchPath(baseUrl)}${terminal}`
 }
 
 /** Resolve the Grok-compatible model-list endpoint from the same configured base. */
@@ -87,9 +93,18 @@ export interface PreparedSearchApiRequest {
   readonly endpoint: string
   readonly protocol: SearchApiProtocol
   readonly model: string
+  readonly nativeSearch?: 'xai' | 'openrouter'
   /** Detached lossless JSON sent on the wire. */
   readonly body: JsonValue
   readonly serializedBody: string
+}
+
+/** Match official HTTPS origins only; compatible proxies keep their existing wire format. */
+function officialSearchApiProvider(url: URL): 'xai' | 'openrouter' | undefined {
+  if (url.protocol !== 'https:' || url.port !== '') return undefined
+  if (['api.x.ai', 'us.api.x.ai'].includes(url.hostname)) return 'xai'
+  if (url.hostname === 'openrouter.ai') return 'openrouter'
+  return undefined
 }
 
 function freezeJson(value: JsonValue): JsonValue {
@@ -123,10 +138,21 @@ function snapshotBody(value: unknown): JsonValue {
 export function buildSearchApiRequest(input: BuildSearchApiRequestInput): PreparedSearchApiRequest {
   const query = input.query.trim()
   if (query.length === 0) throw new RangeError('Search query must not be empty')
-  const protocol = exactEnum(SEARCH_API_PROTOCOLS, input.config.protocol, 'protocol')
+  const configuredProtocol = exactEnum(SEARCH_API_PROTOCOLS, input.config.protocol, 'protocol')
   const level = exactEnum(THINKING_LEVELS, input.config.thinkingLevel, 'thinkingLevel')
-  const effort = reasoningEffort(level)
   const model = normalizeSearchApiModel(input.config.model)
+  const provider = officialSearchApiProvider(new URL(validatedBaseUrl(input.config.baseUrl)))
+  const nativeSearch = (provider === 'xai' && model.startsWith('grok-'))
+    || (provider === 'openrouter' && model.startsWith('x-ai/grok-')) ? provider : undefined
+  // xAI's server-side search tools are available only through Responses.
+  const protocol = nativeSearch === 'xai' ? 'responses' : configuredProtocol
+  const effort = reasoningEffort(nativeSearch === undefined ? level
+    : level === 'minimal' ? 'low' : level === 'max' ? 'xhigh' : level)
+  const tools = nativeSearch === 'xai'
+    ? [{ type: 'web_search' }, { type: 'x_search' }]
+    : nativeSearch === 'openrouter'
+      ? [{ type: 'openrouter:web_search', parameters: { engine: 'native' } }]
+      : undefined
   const endpoint = searchApiEndpoint(input.config.baseUrl, protocol)
   const user = `${input.timeContext === undefined ? '' : renderCurrentTimeContext(input.timeContext)}${query}`
 
@@ -138,6 +164,7 @@ export function buildSearchApiRequest(input: BuildSearchApiRequestInput): Prepar
         ...(effort === undefined ? {} : { reasoning: { effort } }),
         store: false,
         stream: true,
+        ...(tools === undefined ? {} : { tools }),
       })
     : snapshotBody({
         messages: [
@@ -145,8 +172,10 @@ export function buildSearchApiRequest(input: BuildSearchApiRequestInput): Prepar
           { content: user, role: 'user' },
         ],
         model,
-        ...(effort === undefined ? {} : { reasoning_effort: effort }),
+        ...(effort === undefined ? {} : nativeSearch === 'openrouter'
+          ? { reasoning: { effort } } : { reasoning_effort: effort }),
         stream: true,
+        ...(tools === undefined ? {} : { tools }),
       })
 
   return Object.freeze({
@@ -154,6 +183,7 @@ export function buildSearchApiRequest(input: BuildSearchApiRequestInput): Prepar
     endpoint,
     model,
     protocol,
+    ...(nativeSearch === undefined ? {} : { nativeSearch }),
     serializedBody: JSON.stringify(body),
   })
 }

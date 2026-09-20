@@ -73,6 +73,10 @@
             "state": "configured"
           },
           {
+            "provider": "exa",
+            "state": "disabled"
+          },
+          {
             "provider": "tavily_search",
             "state": "configured"
           },
@@ -189,6 +193,10 @@
             "state": "configured"
           },
           {
+            "provider": "exa",
+            "state": "disabled"
+          },
+          {
             "provider": "tavily_search",
             "state": "configured"
           },
@@ -292,6 +300,10 @@
           {
             "provider": "search_api",
             "state": "configured"
+          },
+          {
+            "provider": "exa",
+            "state": "disabled"
           },
           {
             "provider": "tavily_search",
@@ -399,6 +411,10 @@
             "state": "configured"
           },
           {
+            "provider": "exa",
+            "state": "disabled"
+          },
+          {
             "provider": "tavily_search",
             "state": "configured"
           },
@@ -465,6 +481,13 @@
         "outcome": "success",
         "duration_ms": "<duration-ms>",
         "attempts": 1
+      },
+      {
+        "capability": "main_search",
+        "provider": "exa",
+        "outcome": "disabled",
+        "duration_ms": "<duration-ms>",
+        "attempts": 0
       },
       {
         "capability": "main_search",
@@ -588,6 +611,10 @@
             "state": "configured"
           },
           {
+            "provider": "exa",
+            "state": "disabled"
+          },
+          {
             "provider": "tavily_search",
             "state": "configured"
           },
@@ -654,6 +681,13 @@
         "outcome": "success",
         "duration_ms": "<duration-ms>",
         "attempts": 1
+      },
+      {
+        "capability": "main_search",
+        "provider": "exa",
+        "outcome": "disabled",
+        "duration_ms": "<duration-ms>",
+        "attempts": 0
       },
       {
         "capability": "main_search",
@@ -844,7 +878,7 @@
       "content": [
         {
           "type": "text",
-          "text": "Search diagnostics\nAction: show\nLive probes run: no\nMinimum profile: standard (satisfied=true)\nProduct fallback used by diagnostics: false\n\nCapability availability (configuration only)\n- main_search: available=true, required=true, providers=search_api:configured, tavily_search:configured, firecrawl_search:configured\n- docs_search: available=true, required=true, providers=context7:configured, exa:configured\n- web_extract: available=true, required=true, providers=tavily_extract:configured, firecrawl_scrape:configured, smart_direct:configured, direct:configured\n- site_map: available=true, required=false, providers=tavily_map:configured\n\nThis-test Provider outcomes\nNo network probes were run by show.\n\nSafe configuration status\nDefault profile/depth: auto/compact\nSearch API protocol: completions\nSearch model configured: true\nThinking/fallback: off/auto\nConfigured deferred operations: web_map=true, research_plan=true, diagnostics=true (invoke active operations through search_call)\nSearch routes enabled: tavily=true, firecrawl=true\nExtract routes enabled: tavily=true, firecrawl=true, smart_direct=true, direct=true\n\nWarnings\nNone.\n\nLimitations\n- Capability availability reflects configuration and route enablement, not live connectivity.\n- show performs no Provider request and uses only DSH Credentials describe for credential status."
+          "text": "Search diagnostics\nAction: show\nLive probes run: no\nMinimum profile: standard (satisfied=true)\nProduct fallback used by diagnostics: false\n\nCapability availability (configuration only)\n- main_search: available=true, required=true, providers=search_api:configured, exa:disabled, tavily_search:configured, firecrawl_search:configured\n- docs_search: available=true, required=true, providers=context7:configured, exa:configured\n- web_extract: available=true, required=true, providers=tavily_extract:configured, firecrawl_scrape:configured, smart_direct:configured, direct:configured\n- site_map: available=true, required=false, providers=tavily_map:configured\n\nThis-test Provider outcomes\nNo network probes were run by show.\n\nSafe configuration status\nDefault profile/depth: auto/compact\nSearch API protocol: completions\nSearch model configured: true\nThinking/fallback: off/auto\nConfigured deferred operations: web_map=true, research_plan=true, diagnostics=true (invoke active operations through search_call)\nSearch routes enabled: tavily=true, firecrawl=true\nExtract routes enabled: tavily=true, firecrawl=true, smart_direct=true, direct=true\n\nWarnings\nNone.\n\nLimitations\n- Capability availability reflects configuration and route enablement, not live connectivity.\n- show performs no Provider request and uses only DSH Credentials describe for credential status."
         }
       ],
       "meta": {
@@ -886,7 +920,7 @@
       "content": [
         {
           "type": "text",
-          "text": "Search diagnostics\nAction: test\nLive probes run: yes\nMinimum profile: standard (satisfied=true)\nProduct fallback used by diagnostics: false\n\nCapability availability (configuration only)\n- main_search: available=true, required=true, providers=search_api:configured, tavily_search:configured, firecrawl_search:configured\n- docs_search: available=true, required=true, providers=context7:configured, exa:configured\n- web_extract: available=true, required=true, providers=tavily_extract:configured, firecrawl_scrape:configured, smart_direct:configured, direct:configured\n- site_map: available=true, required=false, providers=tavily_map:configured\n\nThis-test Provider outcomes\n- main_search/search_api: outcome=success, attempts=1, duration_ms=<duration-ms>\n- main_search/tavily_search: outcome=success, attempts=1, duration_ms=<duration-ms>\n- main_search/firecrawl_search: outcome=success, attempts=1, duration_ms=<duration-ms>\n- docs_search/context7: outcome=success, attempts=1, duration_ms=<duration-ms>\n- docs_search/exa: outcome=success, attempts=1, duration_ms=<duration-ms>\n- web_extract/tavily_extract: outcome=unsupported, attempts=0, duration_ms=<duration-ms>\n- web_extract/firecrawl_scrape: outcome=unsupported, attempts=0, duration_ms=<duration-ms>\n- web_extract/smart_direct: outcome=unsupported, attempts=0, duration_ms=<duration-ms>\n- web_extract/direct: outcome=unsupported, attempts=0, duration_ms=<duration-ms>\n- site_map/tavily_map: outcome=unsupported, attempts=0, duration_ms=<duration-ms>\n\nSafe configuration status\nDefault profile/depth: auto/compact\nSearch API protocol: completions\nSearch model configured: true\nThinking/fallback: off/auto\nConfigured deferred operations: web_map=true, research_plan=true, diagnostics=true (invoke active operations through search_call)\nSearch routes enabled: tavily=true, firecrawl=true\nExtract routes enabled: tavily=true, firecrawl=true, smart_direct=true, direct=true\n\nWarnings\n- Configured routes have no compliant network probe (5).\n\nLimitations\n- Capability availability reflects configuration and route enablement; only provider_attempts describes this test.\n- Connectivity probes are bounded point-in-time checks and do not guarantee complete third-party service health.\n- Tavily Extract, Firecrawl Scrape, Tavily Map, smart_direct, and direct are not network-probed; local routes report enabled state only.\n- The test does not call Search API main search or write session events, source records, or Provider response caches."
+          "text": "Search diagnostics\nAction: test\nLive probes run: yes\nMinimum profile: standard (satisfied=true)\nProduct fallback used by diagnostics: false\n\nCapability availability (configuration only)\n- main_search: available=true, required=true, providers=search_api:configured, exa:disabled, tavily_search:configured, firecrawl_search:configured\n- docs_search: available=true, required=true, providers=context7:configured, exa:configured\n- web_extract: available=true, required=true, providers=tavily_extract:configured, firecrawl_scrape:configured, smart_direct:configured, direct:configured\n- site_map: available=true, required=false, providers=tavily_map:configured\n\nThis-test Provider outcomes\n- main_search/search_api: outcome=success, attempts=1, duration_ms=<duration-ms>\n- main_search/exa: outcome=disabled, attempts=0, duration_ms=<duration-ms>\n- main_search/tavily_search: outcome=success, attempts=1, duration_ms=<duration-ms>\n- main_search/firecrawl_search: outcome=success, attempts=1, duration_ms=<duration-ms>\n- docs_search/context7: outcome=success, attempts=1, duration_ms=<duration-ms>\n- docs_search/exa: outcome=success, attempts=1, duration_ms=<duration-ms>\n- web_extract/tavily_extract: outcome=unsupported, attempts=0, duration_ms=<duration-ms>\n- web_extract/firecrawl_scrape: outcome=unsupported, attempts=0, duration_ms=<duration-ms>\n- web_extract/smart_direct: outcome=unsupported, attempts=0, duration_ms=<duration-ms>\n- web_extract/direct: outcome=unsupported, attempts=0, duration_ms=<duration-ms>\n- site_map/tavily_map: outcome=unsupported, attempts=0, duration_ms=<duration-ms>\n\nSafe configuration status\nDefault profile/depth: auto/compact\nSearch API protocol: completions\nSearch model configured: true\nThinking/fallback: off/auto\nConfigured deferred operations: web_map=true, research_plan=true, diagnostics=true (invoke active operations through search_call)\nSearch routes enabled: tavily=true, firecrawl=true\nExtract routes enabled: tavily=true, firecrawl=true, smart_direct=true, direct=true\n\nWarnings\n- Configured routes have no compliant network probe (5).\n\nLimitations\n- Capability availability reflects configuration and route enablement; only provider_attempts describes this test.\n- Connectivity probes are bounded point-in-time checks and do not guarantee complete third-party service health.\n- Tavily Extract, Firecrawl Scrape, Tavily Map, smart_direct, and direct are not network-probed; local routes report enabled state only.\n- The test does not call Search API main search or write session events, source records, or Provider response caches."
         }
       ],
       "meta": {
@@ -913,11 +947,11 @@
   ],
   "code_events": [
     {
-      "type": "tool/code-dispatch-start",
+      "type": "tool/ptc-dispatch-start",
       "data": {
         "rootCallId": "code-diagnostics-show",
         "parentCallId": "code-diagnostics-show",
-        "subCallId": "code-diagnostics-show:code:1",
+        "subCallId": "code-diagnostics-show:ptc:1",
         "name": "search_call",
         "arguments": {
           "operation": "search_diagnostics",
@@ -928,11 +962,11 @@
       }
     },
     {
-      "type": "tool/code-dispatch",
+      "type": "tool/ptc-dispatch",
       "data": {
         "rootCallId": "code-diagnostics-show",
         "parentCallId": "code-diagnostics-show",
-        "subCallId": "code-diagnostics-show:code:1",
+        "subCallId": "code-diagnostics-show:ptc:1",
         "name": "search_call",
         "arguments": {
           "operation": "search_diagnostics",
@@ -944,17 +978,17 @@
         "content": [
           {
             "type": "text",
-            "text": "Search diagnostics\nAction: show\nLive probes run: no\nMinimum profile: standard (satisfied=true)\nProduct fallback used by diagnostics: false\n\nCapability availability (configuration only)\n- main_search: available=true, required=true, providers=search_api:configured, tavily_search:configured, firecrawl_search:configured\n- docs_search: available=true, required=true, providers=context7:configured, exa:configured\n- web_extract: available=true, required=true, providers=tavily_extract:configured, firecrawl_scrape:configured, smart_direct:configured, direct:configured\n- site_map: available=true, required=false, providers=tavily_map:configured\n\nThis-test Provider outcomes\nNo network probes were run by show.\n\nSafe configuration status\nDefault profile/depth: auto/compact\nSearch API protocol: completions\nSearch model configured: true\nThinking/fallback: off/auto\nConfigured deferred operations: web_map=true, research_plan=true, diagnostics=true (invoke active operations through search_call)\nSearch routes enabled: tavily=true, firecrawl=true\nExtract routes enabled: tavily=true, firecrawl=true, smart_direct=true, direct=true\n\nWarnings\nNone.\n\nLimitations\n- Capability availability reflects configuration and route enablement, not live connectivity.\n- show performs no Provider request and uses only DSH Credentials describe for credential status."
+            "text": "Search diagnostics\nAction: show\nLive probes run: no\nMinimum profile: standard (satisfied=true)\nProduct fallback used by diagnostics: false\n\nCapability availability (configuration only)\n- main_search: available=true, required=true, providers=search_api:configured, exa:disabled, tavily_search:configured, firecrawl_search:configured\n- docs_search: available=true, required=true, providers=context7:configured, exa:configured\n- web_extract: available=true, required=true, providers=tavily_extract:configured, firecrawl_scrape:configured, smart_direct:configured, direct:configured\n- site_map: available=true, required=false, providers=tavily_map:configured\n\nThis-test Provider outcomes\nNo network probes were run by show.\n\nSafe configuration status\nDefault profile/depth: auto/compact\nSearch API protocol: completions\nSearch model configured: true\nThinking/fallback: off/auto\nConfigured deferred operations: web_map=true, research_plan=true, diagnostics=true (invoke active operations through search_call)\nSearch routes enabled: tavily=true, firecrawl=true\nExtract routes enabled: tavily=true, firecrawl=true, smart_direct=true, direct=true\n\nWarnings\nNone.\n\nLimitations\n- Capability availability reflects configuration and route enablement, not live connectivity.\n- show performs no Provider request and uses only DSH Credentials describe for credential status."
           }
         ]
       }
     },
     {
-      "type": "tool/code-dispatch-start",
+      "type": "tool/ptc-dispatch-start",
       "data": {
         "rootCallId": "code-diagnostics-test",
         "parentCallId": "code-diagnostics-test",
-        "subCallId": "code-diagnostics-test:code:1",
+        "subCallId": "code-diagnostics-test:ptc:1",
         "name": "search_call",
         "arguments": {
           "operation": "search_diagnostics",
@@ -965,11 +999,11 @@
       }
     },
     {
-      "type": "tool/code-dispatch",
+      "type": "tool/ptc-dispatch",
       "data": {
         "rootCallId": "code-diagnostics-test",
         "parentCallId": "code-diagnostics-test",
-        "subCallId": "code-diagnostics-test:code:1",
+        "subCallId": "code-diagnostics-test:ptc:1",
         "name": "search_call",
         "arguments": {
           "operation": "search_diagnostics",
@@ -981,7 +1015,7 @@
         "content": [
           {
             "type": "text",
-            "text": "Search diagnostics\nAction: test\nLive probes run: yes\nMinimum profile: standard (satisfied=true)\nProduct fallback used by diagnostics: false\n\nCapability availability (configuration only)\n- main_search: available=true, required=true, providers=search_api:configured, tavily_search:configured, firecrawl_search:configured\n- docs_search: available=true, required=true, providers=context7:configured, exa:configured\n- web_extract: available=true, required=true, providers=tavily_extract:configured, firecrawl_scrape:configured, smart_direct:configured, direct:configured\n- site_map: available=true, required=false, providers=tavily_map:configured\n\nThis-test Provider outcomes\n- main_search/search_api: outcome=success, attempts=1, duration_ms=<duration-ms>\n- main_search/tavily_search: outcome=success, attempts=1, duration_ms=<duration-ms>\n- main_search/firecrawl_search: outcome=success, attempts=1, duration_ms=<duration-ms>\n- docs_search/context7: outcome=success, attempts=1, duration_ms=<duration-ms>\n- docs_search/exa: outcome=success, attempts=1, duration_ms=<duration-ms>\n- web_extract/tavily_extract: outcome=unsupported, attempts=0, duration_ms=<duration-ms>\n- web_extract/firecrawl_scrape: outcome=unsupported, attempts=0, duration_ms=<duration-ms>\n- web_extract/smart_direct: outcome=unsupported, attempts=0, duration_ms=<duration-ms>\n- web_extract/direct: outcome=unsupported, attempts=0, duration_ms=<duration-ms>\n- site_map/tavily_map: outcome=unsupported, attempts=0, duration_ms=<duration-ms>\n\nSafe configuration status\nDefault profile/depth: auto/compact\nSearch API protocol: completions\nSearch model configured: true\nThinking/fallback: off/auto\nConfigured deferred operations: web_map=true, research_plan=true, diagnostics=true (invoke active operations through search_call)\nSearch routes enabled: tavily=true, firecrawl=true\nExtract routes enabled: tavily=true, firecrawl=true, smart_direct=true, direct=true\n\nWarnings\n- Configured routes have no compliant network probe (5).\n\nLimitations\n- Capability availability reflects configuration and route enablement; only provider_attempts describes this test.\n- Connectivity probes are bounded point-in-time checks and do not guarantee complete third-party service health.\n- Tavily Extract, Firecrawl Scrape, Tavily Map, smart_direct, and direct are not network-probed; local routes report enabled state only.\n- The test does not call Search API main search or write session events, source records, or Provider response caches."
+            "text": "Search diagnostics\nAction: test\nLive probes run: yes\nMinimum profile: standard (satisfied=true)\nProduct fallback used by diagnostics: false\n\nCapability availability (configuration only)\n- main_search: available=true, required=true, providers=search_api:configured, exa:disabled, tavily_search:configured, firecrawl_search:configured\n- docs_search: available=true, required=true, providers=context7:configured, exa:configured\n- web_extract: available=true, required=true, providers=tavily_extract:configured, firecrawl_scrape:configured, smart_direct:configured, direct:configured\n- site_map: available=true, required=false, providers=tavily_map:configured\n\nThis-test Provider outcomes\n- main_search/search_api: outcome=success, attempts=1, duration_ms=<duration-ms>\n- main_search/exa: outcome=disabled, attempts=0, duration_ms=<duration-ms>\n- main_search/tavily_search: outcome=success, attempts=1, duration_ms=<duration-ms>\n- main_search/firecrawl_search: outcome=success, attempts=1, duration_ms=<duration-ms>\n- docs_search/context7: outcome=success, attempts=1, duration_ms=<duration-ms>\n- docs_search/exa: outcome=success, attempts=1, duration_ms=<duration-ms>\n- web_extract/tavily_extract: outcome=unsupported, attempts=0, duration_ms=<duration-ms>\n- web_extract/firecrawl_scrape: outcome=unsupported, attempts=0, duration_ms=<duration-ms>\n- web_extract/smart_direct: outcome=unsupported, attempts=0, duration_ms=<duration-ms>\n- web_extract/direct: outcome=unsupported, attempts=0, duration_ms=<duration-ms>\n- site_map/tavily_map: outcome=unsupported, attempts=0, duration_ms=<duration-ms>\n\nSafe configuration status\nDefault profile/depth: auto/compact\nSearch API protocol: completions\nSearch model configured: true\nThinking/fallback: off/auto\nConfigured deferred operations: web_map=true, research_plan=true, diagnostics=true (invoke active operations through search_call)\nSearch routes enabled: tavily=true, firecrawl=true\nExtract routes enabled: tavily=true, firecrawl=true, smart_direct=true, direct=true\n\nWarnings\n- Configured routes have no compliant network probe (5).\n\nLimitations\n- Capability availability reflects configuration and route enablement; only provider_attempts describes this test.\n- Connectivity probes are bounded point-in-time checks and do not guarantee complete third-party service health.\n- Tavily Extract, Firecrawl Scrape, Tavily Map, smart_direct, and direct are not network-probed; local routes report enabled state only.\n- The test does not call Search API main search or write session events, source records, or Provider response caches."
           }
         ]
       }
@@ -1194,6 +1228,10 @@
               "state": "configured"
             },
             {
+              "provider": "exa",
+              "state": "disabled"
+            },
+            {
               "provider": "tavily_search",
               "state": "configured"
             },
@@ -1292,7 +1330,7 @@
     "content": [
       {
         "type": "text",
-        "text": "Search diagnostics\nAction: show\nLive probes run: no\nMinimum profile: standard (satisfied=true)\nProduct fallback used by diagnostics: false\n\nCapability availability (configuration only)\n- main_search: available=true, required=true, providers=search_api:configured, tavily_search:configured, firecrawl_search:configured\n- docs_search: available=true, required=true, providers=context7:configured, exa:configured\n- web_extract: available=true, required=true, providers=tavily_extract:configured, firecrawl_scrape:configured, smart_direct:configured, direct:configured\n- site_map: available=true, required=false, providers=tavily_map:configured\n\nThis-test Provider outcomes\nNo network probes were run by show.\n\nSafe configuration status\nDefault profile/depth: auto/compact\nSearch API protocol: completions\nSearch model configured: true\nThinking/fallback: off/auto\nConfigured deferred operations: web_map=true, research_plan=true, diagnostics=true (invoke active operations through search_call)\nSearch routes enabled: tavily=true, firecrawl=true\nExtract routes enabled: tavily=true, firecrawl=true, smart_direct=true, direct=true\n\nWarnings\nNone.\n\nLimitations\n- Capability availability reflects configuration and route enablement, not live connectivity.\n- show performs no Provider request and uses only DSH Credentials describe for credential status."
+        "text": "Search diagnostics\nAction: show\nLive probes run: no\nMinimum profile: standard (satisfied=true)\nProduct fallback used by diagnostics: false\n\nCapability availability (configuration only)\n- main_search: available=true, required=true, providers=search_api:configured, exa:disabled, tavily_search:configured, firecrawl_search:configured\n- docs_search: available=true, required=true, providers=context7:configured, exa:configured\n- web_extract: available=true, required=true, providers=tavily_extract:configured, firecrawl_scrape:configured, smart_direct:configured, direct:configured\n- site_map: available=true, required=false, providers=tavily_map:configured\n\nThis-test Provider outcomes\nNo network probes were run by show.\n\nSafe configuration status\nDefault profile/depth: auto/compact\nSearch API protocol: completions\nSearch model configured: true\nThinking/fallback: off/auto\nConfigured deferred operations: web_map=true, research_plan=true, diagnostics=true (invoke active operations through search_call)\nSearch routes enabled: tavily=true, firecrawl=true\nExtract routes enabled: tavily=true, firecrawl=true, smart_direct=true, direct=true\n\nWarnings\nNone.\n\nLimitations\n- Capability availability reflects configuration and route enablement, not live connectivity.\n- show performs no Provider request and uses only DSH Credentials describe for credential status."
       }
     ],
     "meta": {
@@ -1327,6 +1365,10 @@
             {
               "provider": "search_api",
               "state": "configured"
+            },
+            {
+              "provider": "exa",
+              "state": "disabled"
             },
             {
               "provider": "tavily_search",

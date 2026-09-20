@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { SlotCore, type PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
+import type { ComponentProps } from 'react'
 
 import * as client from '../src/client/index.js'
 import {
@@ -12,11 +13,31 @@ import {
 } from '../src/client/SearchEnhancePluginCard.js'
 import { en, type SearchEnhanceLocaleKey } from '../src/client/locales.js'
 import {
-  WEB_EXTRA_DISCOVERY_PROFILES,
+  WEB_SUPPLEMENTAL_SEARCH_PROVIDERS,
   type WebConfigSnapshot,
   type WebCredentialSlot,
   type WebCredentialState,
 } from '../src/web-config/contracts.js'
+
+// DSH supplies these atoms in the browser; its Node barrel also imports
+// unrelated Markdown dependencies that 0.1.5-rc.2 does not ship for Node consumers.
+vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
+  Button: ({ variant, size, icon, children, ...props }: ComponentProps<typeof import('@deepseek-ai/dsh-client-ui-primitives').Button>) => (
+    <button {...props}>{icon}{children}</button>
+  ),
+  StateDot: () => <span aria-hidden="true" />,
+  Menu: ({ open, anchor, items, selectedIds, onSelect }: ComponentProps<typeof import('@deepseek-ai/dsh-client-ui-primitives').Menu>) => (
+    <>{anchor}{open ? (
+      <div role="menu">
+        {items.map(item => 'type' in item ? null : (
+          <button key={item.id} role="menuitem" disabled={item.disabled} data-selected={selectedIds?.includes(item.id) ?? false} onClick={() => { onSelect(item.id) }}>
+            {item.label}
+          </button>
+        ))}
+      </div>
+    ) : null}</>
+  ),
+}))
 
 function t(
   key: SearchEnhanceLocaleKey,
@@ -51,14 +72,7 @@ function snapshot(overrides: Partial<WebConfigSnapshot> = {}): WebConfigSnapshot
       defaultDepth: 'compact',
       toolTimeoutMs: 180_000,
       toolDiscovery: { mode: 'progressive' },
-      extraDiscoverySources: {
-        auto: 0,
-        coding_docs: 0,
-        code_examples: 0,
-        project_research: 0,
-        academic: 0,
-        fact_check: 0,
-      },
+      supplementalSearch: { exa: false, tavily: false, firecrawl: false, maxSourcesPerProvider: 5 },
       searchApi: {
         baseUrl: 'https://grok-gateway.example/v1',
         protocol: 'completions',
@@ -74,8 +88,10 @@ function snapshot(overrides: Partial<WebConfigSnapshot> = {}): WebConfigSnapshot
         firecrawl: { baseUrl: 'https://api.firecrawl.dev/v2', credentialRef: 'FIRECRAWL_API_KEY', timeoutMs: 120_000 },
       },
       webExtract: {
-        smartDirect: { proxyUrl: 'http://127.0.0.1:7890' },
-        direct: { proxyUrl: 'http://127.0.0.1:7891' },
+        tavily: { enabled: true },
+        firecrawl: { enabled: true },
+        smartDirect: { enabled: true, proxyUrl: 'http://127.0.0.1:7890' },
+        direct: { enabled: true, proxyUrl: 'http://127.0.0.1:7891' },
       },
     },
     base: {
@@ -99,7 +115,7 @@ function snapshot(overrides: Partial<WebConfigSnapshot> = {}): WebConfigSnapshot
       thinkingLevels: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
       toolDiscoveryModes: ['progressive', 'all'],
       proxyUrlMaxCharacters: 2048,
-      extraDiscoveryMaxSources: 100,
+      supplementalSearchMaxSources: 100,
     },
     credentials: {
       searchApi: credentialState('TEST_GROK_SEARCH_KEY', true, 'file'),
@@ -247,7 +263,7 @@ describe('Search Enhance browser contribution', () => {
     render(<SearchEnhancePluginCard t={t as SearchEnhancePluginCardProps['t']} />)
     await openCard()
 
-    expect((screen.getByLabelText(en.baseUrl) as HTMLInputElement).value).toBe('https://grok-gateway.example/v1')
+    expect((screen.getByLabelText(`${en.searchApiCredential} ${en.baseUrl}`) as HTMLInputElement).value).toBe('https://grok-gateway.example/v1')
     expect((screen.getByLabelText(en.model) as HTMLInputElement).value).toBe('grok-4.20-beta')
     expect((screen.getByRole('button', { name: en.save }) as HTMLButtonElement).disabled).toBe(true)
     expect(screen.getByText(en.independentNote)).toBeTruthy()
@@ -261,11 +277,50 @@ describe('Search Enhance browser contribution', () => {
       mutations: [{ op: 'set', path: ['searchApi', 'model'], value: 'grok-custom-next' }],
     })
     expect(fetchMock).toHaveBeenCalledTimes(2)
-    expect((screen.getByLabelText(en.baseUrl) as HTMLInputElement).value).toBe('https://grok-gateway.example/v1')
+    expect((screen.getByLabelText(`${en.searchApiCredential} ${en.baseUrl}`) as HTMLInputElement).value).toBe('https://grok-gateway.example/v1')
 
-    fireEvent.click(screen.getByText(en.providersSummary))
-    expect(screen.getByLabelText(`${en.context7} ${en.baseUrl}`)).toBeTruthy()
-    expect(screen.getByLabelText(`${en.firecrawl} ${en.timeoutMs}`)).toBeTruthy()
+    const credentials = within(screen.getByRole('region', { name: en.credentialsHeading }))
+    expect(credentials.getByLabelText(`${en.context7} ${en.baseUrl}`)).toBeTruthy()
+    expect(credentials.getByLabelText(`${en.firecrawl} ${en.timeoutMs}`)).toBeTruthy()
+    expect(credentials.getByLabelText(`${en.searchApiCredential} ${en.baseUrl}`)).toBeTruthy()
+    expect(document.querySelector('details')).toBeNull()
+  })
+
+  it('saves endpoints and connection settings from their credential cards without sending keys', async () => {
+    const initial = snapshot()
+    const next = snapshot({ revision: 1, value: {
+      ...initial.value,
+      searchApi: { ...initial.value.searchApi, baseUrl: 'https://new-grok.example/v1' },
+      providers: { ...initial.value.providers, exa: { baseUrl: 'https://new-exa.example', credentialRef: 'NEW_EXA_KEY', timeoutMs: 30_000 } },
+    } })
+    let patchBody: unknown
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      expect(requestPath(input)).toBe('/dsh-search-enhance/config')
+      if (requestMethod(init) === 'GET') return response(initial)
+      expect(requestMethod(init)).toBe('PATCH')
+      patchBody = JSON.parse(String(init?.body)) as unknown
+      return response(next)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<SearchEnhancePluginCard t={t as SearchEnhancePluginCardProps['t']} />)
+    await openCard()
+    const credentials = within(screen.getByRole('region', { name: en.credentialsHeading }))
+    fireEvent.change(credentials.getByLabelText(`${en.searchApiCredential} ${en.baseUrl}`), { target: { value: next.value.searchApi.baseUrl } })
+    fireEvent.change(credentials.getByLabelText(`${en.exa} ${en.baseUrl}`), { target: { value: next.value.providers.exa.baseUrl } })
+    fireEvent.change(credentials.getByLabelText(`${en.exa} ${en.timeoutMs}`), { target: { value: '30000' } })
+    fireEvent.change(credentials.getByLabelText(`${en.exa} ${en.credentialRef}`), { target: { value: 'NEW_EXA_KEY' } })
+    expect(credentials.getByText(en.saveConfigFirst)).toBeTruthy()
+    expect((credentials.getByLabelText(t('keyValue', { name: en.exa })) as HTMLInputElement).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: en.save }))
+    expect(await screen.findByText(en.savedRestart)).toBeTruthy()
+    expect(patchBody).toEqual({ expectedRevision: 0, mutations: [
+      { op: 'set', path: ['searchApi', 'baseUrl'], value: next.value.searchApi.baseUrl },
+      { op: 'set', path: ['providers', 'exa', 'baseUrl'], value: next.value.providers.exa.baseUrl },
+      { op: 'set', path: ['providers', 'exa', 'credentialRef'], value: 'NEW_EXA_KEY' },
+      { op: 'set', path: ['providers', 'exa', 'timeoutMs'], value: 30_000 },
+    ] })
+    expect((screen.getByLabelText(en.model) as HTMLInputElement).value).toBe(initial.value.searchApi.model)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
   it('edits both extraction proxies and translates a blank optional proxy into an unset mutation', async () => {
@@ -279,8 +334,9 @@ describe('Search Enhance browser contribution', () => {
         value: {
           ...initial.value,
           webExtract: {
-            smartDirect: { proxyUrl: 'http://127.0.0.1:7892' },
-            direct: { proxyUrl: '' },
+            ...initial.value.webExtract,
+            smartDirect: { ...initial.value.webExtract.smartDirect, proxyUrl: 'http://127.0.0.1:7892' },
+            direct: { ...initial.value.webExtract.direct, proxyUrl: '' },
           },
         },
         user: {
@@ -296,7 +352,6 @@ describe('Search Enhance browser contribution', () => {
 
     render(<SearchEnhancePluginCard t={t as SearchEnhancePluginCardProps['t']} />)
     await openCard()
-    fireEvent.click(screen.getByText(en.providersSummary))
 
     const smartDirect = screen.getByLabelText(en.smartDirectProxy) as HTMLInputElement
     const direct = screen.getByLabelText(en.directProxy) as HTMLInputElement
@@ -318,7 +373,7 @@ describe('Search Enhance browser contribution', () => {
     })
   })
 
-  it('edits the per-profile supplementary source budget and blocks an out-of-range draft', async () => {
+  it('edits multiple search Providers and the extraction allowlist, and bounds the per-Provider cap', async () => {
     const initial = snapshot()
     let patchBody: unknown
     const fetchMock = vi.fn(async (_input: string | URL | Request, init?: RequestInit): Promise<Response> => {
@@ -328,7 +383,8 @@ describe('Search Enhance browser contribution', () => {
         revision: 1,
         value: {
           ...initial.value,
-          extraDiscoverySources: { ...initial.value.extraDiscoverySources, project_research: 10 },
+          supplementalSearch: { ...initial.value.supplementalSearch, exa: true, tavily: true, maxSourcesPerProvider: 10 },
+          webExtract: { ...initial.value.webExtract, direct: { ...initial.value.webExtract.direct, enabled: false } },
         },
       }))
     })
@@ -337,12 +393,33 @@ describe('Search Enhance browser contribution', () => {
     render(<SearchEnhancePluginCard t={t as SearchEnhancePluginCardProps['t']} />)
     await openCard()
 
-    for (const profile of WEB_EXTRA_DISCOVERY_PROFILES) {
-      expect(screen.getByLabelText(`${en.extraSourcesHeading} ${profile}`)).toBeTruthy()
+    const searchSelect = screen.getByRole('button', { name: en.extraSourcesHeading })
+    expect(searchSelect.textContent).toContain(en.selectProviders)
+    expect(screen.queryByRole('menu')).toBeNull()
+    fireEvent.click(searchSelect)
+    for (const provider of WEB_SUPPLEMENTAL_SEARCH_PROVIDERS) {
+      expect(screen.getByRole('menuitem', { name: en[provider] }).getAttribute('data-selected')).toBe('false')
     }
-    const research = screen.getByLabelText(`${en.extraSourcesHeading} project_research`) as HTMLInputElement
-    expect(research.value).toBe('0')
-    expect(research.min).toBe('0')
+    fireEvent.click(screen.getByRole('menuitem', { name: en.exa }))
+    fireEvent.click(screen.getByRole('menuitem', { name: en.tavily }))
+    expect(searchSelect.textContent).toContain('Exa, Tavily')
+    expect(screen.getByRole('menuitem', { name: en.exa }).getAttribute('data-selected')).toBe('true')
+    fireEvent.click(screen.getByRole('menuitem', { name: en.exa }))
+    expect(searchSelect.textContent).not.toContain('Exa')
+    fireEvent.click(screen.getByRole('menuitem', { name: en.exa }))
+    fireEvent.click(searchSelect)
+    expect(screen.queryByRole('menu')).toBeNull()
+    const extractSelect = screen.getByRole('button', { name: en.extractHeading })
+    expect(extractSelect.textContent).toContain('Tavily, Firecrawl, smart_direct, direct')
+    fireEvent.click(extractSelect)
+    fireEvent.click(screen.getByRole('menuitem', { name: en.direct }))
+    expect(screen.getByRole('menuitem', { name: en.direct }).getAttribute('data-selected')).toBe('false')
+    expect(extractSelect.textContent).toContain('Tavily, Firecrawl, smart_direct')
+    expect(extractSelect.textContent).not.toContain(', direct')
+    fireEvent.click(extractSelect)
+    const research = screen.getByLabelText(en.maxSourcesPerProvider) as HTMLInputElement
+    expect(research.value).toBe('5')
+    expect(research.min).toBe('1')
     expect(research.max).toBe('100')
 
     fireEvent.change(research, { target: { value: '101' } })
@@ -355,8 +432,26 @@ describe('Search Enhance browser contribution', () => {
     expect(await screen.findByText(en.savedRestart)).toBeTruthy()
     expect(patchBody).toEqual({
       expectedRevision: 0,
-      mutations: [{ op: 'set', path: ['extraDiscoverySources', 'project_research'], value: 10 }],
+      mutations: [
+        { op: 'set', path: ['supplementalSearch', 'exa'], value: true },
+        { op: 'set', path: ['supplementalSearch', 'tavily'], value: true },
+        { op: 'set', path: ['supplementalSearch', 'maxSourcesPerProvider'], value: 10 },
+        { op: 'set', path: ['webExtract', 'direct', 'enabled'], value: false },
+      ],
     })
+  })
+
+  it('disables provider dropdowns and endpoint edits for read-only settings', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => response(snapshot({ writable: false }))))
+    render(<SearchEnhancePluginCard t={t as SearchEnhancePluginCardProps['t']} />)
+    await openCard()
+    for (const name of [en.extraSourcesHeading, en.extractHeading]) {
+      const select = screen.getByRole('button', { name }) as HTMLButtonElement
+      expect(select.disabled).toBe(true)
+      fireEvent.click(select)
+    }
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect((screen.getByLabelText(`${en.exa} ${en.baseUrl}`) as HTMLInputElement).disabled).toBe(true)
   })
 
   it('keeps the draft and shows a revision conflict instead of retrying over newer settings', async () => {

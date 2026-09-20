@@ -107,9 +107,8 @@ function orchestrationResult(): SearchOrchestrationResult {
       routing: {
         profile: 'auto',
         depth: 'compact',
-        documentationEnhancement: true,
-        extraDiscoveryBudget: 0,
-        discoveryAllocation: { tavily: 0, firecrawl: 0 },
+        supplementalProviders: [],
+        sourcesPerProvider: 5,
       },
       attempts: [],
     },
@@ -763,21 +762,58 @@ describe('canonical Consumer projections', () => {
 })
 
 describe('Native model text', () => {
-  it('renders answer, top sources, counts/ref, limitations, then discovery notice', () => {
+  it('renders limitations before the answer and sources, then counts and discovery notice', () => {
     const text = renderWebSearchText(resultWithLimit(64 * 1024))
+    const limitations = text.indexOf('Limitations')
     const answer = text.indexOf('Answer')
     const sources = text.indexOf('Top sources')
     const counts = text.indexOf('Sources shown: 1/3')
-    const limitations = text.indexOf('Limitations')
     const discovery = text.indexOf('Evidence level: discovery')
-    expect(answer).toBeGreaterThanOrEqual(0)
+    expect(limitations).toBe(0)
+    expect(answer).toBeGreaterThan(limitations)
     expect(sources).toBeGreaterThan(answer)
     expect(counts).toBeGreaterThan(sources)
-    expect(limitations).toBeGreaterThan(counts)
-    expect(discovery).toBeGreaterThan(limitations)
+    expect(discovery).toBeGreaterThan(counts)
     expect(text).toContain('Source reference: src_')
     expect(text).toContain('Date: 2026-08-14')
     expect(text).toContain('Snippet: A useful discovery snippet.')
+  })
+
+  it('makes unconfirmed native search visible ahead of the answer', () => {
+    const text = renderWebSearchText({
+      ...resultWithLimit(4096, 'Answer without reported search'),
+      warnings: [{ code: 'native_search_unconfirmed', provider: 'search-api', capability: 'main_search' }],
+    })
+    expect(text).toMatch(/^Limitations\n- Native search was enabled/)
+    expect(text).toContain('not confirmed as web-grounded')
+    expect(text.indexOf('not confirmed as web-grounded')).toBeLessThan(text.indexOf('Answer without reported search'))
+  })
+
+  it.each(['partial', 'complete'] as const)('keeps failure reasons ahead of long answers and snippets (%s)', state => {
+    const value: WebSearchOutput = {
+      ...resultWithLimit(1024),
+      state,
+      answer: state === 'partial' ? '主搜索失败，仅返回补充来源。' : '长答案界🙂'.repeat(2000),
+      sources: [{ url: 'https://source.test/a', snippet: `${'长摘要界🙂'.repeat(2000)}SNIPPET_TAIL` }],
+      warnings: [
+        state === 'partial'
+          ? { code: 'main_search_failed', provider: 'search-api', capability: 'main_search', error_kind: 'rate_limited' }
+          : { code: 'provider_failed', provider: 'exa', capability: 'docs_search', error_kind: 'network' },
+        { code: 'provider_not_configured', provider: 'firecrawl', capability: 'web_search' },
+      ],
+    }
+    const notice = '{"capability":"sources","operations":[{"name":"search_sources"}]}'
+    const text = renderWebSearchText(value, notice)
+    const reason = state === 'partial' ? 'search-api/main_search, rate_limited' : 'exa/docs_search, network'
+    expect(text.startsWith('Limitations\n- ')).toBe(true)
+    expect(text).toContain(reason)
+    expect(text).toContain('A selected supplemental Provider is not configured (firecrawl/web_search).')
+    expect(text.indexOf(reason)).toBeLessThan(text.indexOf('The answer, visible sources'))
+    expect(text).not.toContain('SNIPPET_TAIL')
+    expect(text).toContain(`Source reference: ${sourceRef}`)
+    expect(text.endsWith(notice)).toBe(true)
+    expect(Buffer.byteLength(text, 'utf8')).toBeLessThanOrEqual(value.model_text_max_bytes)
+    expect(Buffer.from(text, 'utf8').toString('utf8')).toBe(text)
   })
 
   it('uses one hostname display fallback without writing a canonical title', () => {
@@ -855,7 +891,11 @@ describe('Native model text', () => {
     expect(over.length).toBeLessThan(unbounded.length)
 
     expect(renderWebSearchText(resultWithLimit(1))).toBe('S')
-    const { source_ref: _sourceRef, ...withoutSourceRef } = resultWithLimit(64 * 1024, '界面')
+    const { source_ref: _sourceRef, ...withoutSourceRef } = {
+      ...resultWithLimit(64 * 1024, '界面'),
+      warnings: [],
+      truncated: false,
+    }
     void _sourceRef
     expect(renderWebSearchText({ ...withoutSourceRef, model_text_max_bytes: 2 })).toBe('')
     expect(renderWebSearchText({ ...withoutSourceRef, model_text_max_bytes: 3 })).toBe('界')
@@ -954,10 +994,28 @@ describe('pure Web card projections', () => {
       card: 'web',
       kind: 'search',
       title: 'card query',
+      answer: expect.stringMatching(/^Limitations\n- A supplemental Provider failed \(exa, network\)\.[\s\S]*\n\nAnswer$/),
       truncated: true,
     })
     expect(JSON.stringify(liveMeta)).not.toMatch(/source_ref|provider|category|hidden/)
     expect(liveMeta).toMatchObject({ source_produced: true })
+  })
+
+  it('preserves main-search failure details in replayed cards without changing the canonical answer', () => {
+    const value: WebSearchOutput = {
+      ...resultWithLimit(4096, '主搜索失败，仅返回补充来源。'),
+      state: 'partial',
+      warnings: [{ code: 'main_search_failed', provider: 'search-api', capability: 'main_search', error_kind: 'rate_limited' }],
+    }
+    const args = { query: 'failed search' }
+    const meta = JSON.parse(JSON.stringify(webSearchPresentationMeta(args, value)))
+    const card = presentWebSearchResult(args, { content: [], isError: false, meta })
+    expect(card).toMatchObject({
+      card: 'web',
+      answer: expect.stringMatching(/^Limitations\n- Main search failed;.*\(search-api\/main_search, rate_limited\)\./),
+    })
+    expect(value.answer).toBe('主搜索失败，仅返回补充来源。')
+    expect(meta.answer).toContain(value.answer)
   })
 
   it('keeps titleless canonical sources titleless in replayable Web cards', () => {

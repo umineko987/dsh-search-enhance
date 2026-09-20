@@ -520,7 +520,7 @@ describe('Agent lifecycle and source recovery bridge', () => {
       expect(content?.at(-1)).toEqual(createSourceProducedBlock())
 
       agent.session.append('step/start', { turn: 1, step: 1 })
-      agent.session.append('tool/code-dispatch', {
+      agent.session.append('tool/ptc-dispatch', {
         rootCallId: ToolCallId('code-source-root'),
         parentCallId: ToolCallId('code-source-parent'),
         subCallId: ToolCallId('code-source-subcall'),

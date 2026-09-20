@@ -13,16 +13,15 @@ User request
 DSH Agent
   │
   ├─ web_search ──────> Grok-compatible Search API
-  │                       ├─ Exa for documentation-oriented discovery
-  │                       ├─ Tavily / Firecrawl within the supplementary budget
+  │                       ├─ selected Exa / Tavily / Firecrawl in parallel
   │                       └─ answer + normalized sources + optional source_ref
   │
   ├─ docs_search ─────> Context7 with an explicit library identity
   │                       └─ Exa for broad or unknown-library discovery
   │                          └─ snippets + sources + optional source_ref
   │
-  ├─ web_extract ─────> Tavily → Firecrawl → smart_direct → direct
-  │                       └─ first usable fetched page body + route metadata
+  ├─ web_extract ─────> one explicit user-enabled Provider
+  │                       └─ page body + route metadata, or error (no fallback)
   │
   ├─ search_tools ────> capability and operation manifests on demand
   │
@@ -40,15 +39,19 @@ The plugin keeps discovery, retention, and verification separate:
 2. **Retention:** complete bounded source records can be stored under a `source_ref`, independent of how many links fit in the first tool result.
 3. **Verification:** `web_extract` retrieves selected pages. The Agent can then distinguish “a Provider found this” from “the fetched page states this.”
 
+Prefer `web_extract` for webpage bodies such as articles, blogs, repository READMEs, and model cards. Prefer the host's `web_fetch`, when available, for raw JSON APIs and structured responses such as arXiv XML/Atom. Use HTTPS directly when available. HTTP 200 with only a title or an app shell is not usable page-body evidence: explicitly choose a suitable enabled extraction Provider instead of repeatedly fetching the same shell. Do not bypass URL safety checks.
+
+Independent `web_search` and `web_extract` calls within one model step may overlap up to DSH's concurrency limit. Source record writes still use the existing serial queue, keeping each call identity and source reference separate.
+
 ## Fixed model-facing surface
 
 The model sees the same five search tools throughout an Agent run:
 
 | Tool | Role |
 | --- | --- |
-| `web_search` | Run the main Grok-compatible search and merge policy-selected supplementary sources. |
+| `web_search` | Run the main Grok-compatible search and merge user-selected supplementary sources. |
 | `docs_search` | Query Context7 with an explicit library identity, or use Exa for broader discovery. |
-| `web_extract` | Retrieve one selected page through the fixed extraction route. |
+| `web_extract` | Retrieve one selected page with a required, user-enabled `provider`. |
 | `search_tools` | Return manifests for deferred capabilities without registering more model tools. |
 | `search_call` | Execute a deferred operation after it becomes active. |
 
@@ -81,11 +84,11 @@ Activation follows these rules:
 A typical sourced answer proceeds as follows:
 
 1. The Agent sends a general current-information request to `web_search`, or a documentation request to `docs_search`.
-2. `web_search` obtains the main answer and sources from the Grok-compatible endpoint. Documentation-oriented policy may add Exa; Tavily and Firecrawl participate only within their configured shared budget.
+2. `web_search` starts the main Grok-compatible search and every user-selected supplemental Provider in parallel. Exa, Tavily, and Firecrawl each receive the same independent source-count cap; unselected Providers are never requested. No profile or query silently enables another Provider.
 3. Search sources are bounded and normalized. The web-search quality pipeline de-duplicates equivalent URLs and can prioritize official, primary, version-matching, and fresher sources.
 4. `docs_search` uses a supplied `library_id` directly, resolves a supplied `library_name` through Context7, or uses Exa when no library identity is known and `provider: "auto"` is selected.
 5. If a complete source record is retained, the result includes `source_ref`. The Agent can use `search_sources` through `search_call` on the next step in `progressive` mode.
-6. For important claims, the Agent selects authoritative URLs and calls `web_extract`. The orchestrator skips unavailable routes and stops at the first usable result in Tavily → Firecrawl → `smart_direct` → `direct` order.
+6. For important claims, the Agent selects authoritative URLs and calls `web_extract` with one explicit `provider` from the enabled list in its tool description. Only that Provider runs; unavailable, unsupported, or failed extraction does not trigger another route.
 7. Site mapping, granular Context7 work, research planning, and diagnostics are disclosed only when the task requires them.
 8. The Agent writes the final response from the main answer, retained sources, and any page bodies it actually retrieved, preserving source links and the distinction between discovery and fetched evidence.
 
@@ -98,4 +101,4 @@ A `source_ref` points to a source list; it is not page content. Claim-level conc
 - Documentation routing: [`src/documentation/service.ts`](../src/documentation/service.ts)
 - Source retention and pagination: [`src/source-storage/`](../src/source-storage/)
 - Capability mapping: [`src/tool-discovery/capabilities.ts`](../src/tool-discovery/capabilities.ts)
-- Extraction fallback: [`src/web-extract/orchestrator.ts`](../src/web-extract/orchestrator.ts)
+- Explicit extraction routing: [`src/web-extract/orchestrator.ts`](../src/web-extract/orchestrator.ts)

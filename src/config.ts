@@ -75,7 +75,12 @@ export interface OutputBudget {
 
 export type ProfileBudgets = Record<SearchDepth, OutputBudget>
 export type SearchBudgets = Record<SearchProfile, ProfileBudgets>
-export type DiscoveryBudgets = Record<SearchProfile, number>
+
+export const SUPPLEMENTAL_SEARCH_PROVIDERS = ['exa', 'tavily', 'firecrawl'] as const
+export type SupplementalSearchProvider = (typeof SUPPLEMENTAL_SEARCH_PROVIDERS)[number]
+export type SupplementalSearchConfig = Record<SupplementalSearchProvider, boolean> & {
+  readonly maxSourcesPerProvider: number
+}
 
 export interface CredentialReferences {
   readonly searchApi: CredentialRef
@@ -158,7 +163,7 @@ export interface CacheConfig {
 }
 
 export interface RemoteExtractConfig {
-  /** Deployment switch; this is not a model-facing Provider selector. */
+  /** User-selected availability; a tool call must explicitly choose this Provider. */
   readonly enabled: boolean
   /** Cooperative timeout for one remote operation. */
   readonly timeoutMs: number
@@ -178,7 +183,7 @@ export interface FirecrawlExtractConfig extends RemoteExtractConfig {
 }
 
 export interface SmartDirectConfig {
-  /** Deployment switch; never a model-visible Provider selector. */
+  /** User-selected availability; a tool call must explicitly choose this Provider. */
   readonly enabled: boolean
   /** Optional deployment-only HTTP proxy origin; omitted means direct transport. */
   readonly proxyUrl?: string
@@ -257,7 +262,7 @@ export interface DirectFetchConfig {
 }
 
 export interface WebExtractConfig {
-  /** Total cooperative deadline for the entire four-route operation. */
+  /** Total cooperative deadline for the explicitly selected Provider. */
   readonly timeoutMs: number
   readonly maxUrlCharacters: number
   /** Complete canonical result-envelope byte ceiling. */
@@ -341,7 +346,7 @@ export interface Config {
   readonly toolTimeoutMs: number
   readonly retry: RetryConfig
   readonly budgets: SearchBudgets
-  readonly extraDiscoverySources: DiscoveryBudgets
+  readonly supplementalSearch: SupplementalSearchConfig
   readonly retention: RetentionConfig
   readonly cache: CacheConfig
   /** Deployment-level Agent tool-discovery policy; Settings changes apply on restart. */
@@ -399,8 +404,8 @@ export const DEFAULT_SEARCH_BUDGETS: SearchBudgets = {
   },
 }
 
-/** Deployment ceiling for one profile's supplementary discovery-source budget. */
-export const EXTRA_DISCOVERY_SOURCES_MAX = 100
+/** Source-count ceiling for each explicitly selected supplementary Provider. */
+export const SUPPLEMENTAL_SEARCH_MAX_SOURCES = 100
 
 export const SEARCH_ENHANCE_SETTINGS_NAMESPACE = 'search-enhance'
 
@@ -523,13 +528,11 @@ export const Config: Schema<Config> = Schema.object({
     academic: profileBudgets('academic'),
     fact_check: profileBudgets('fact_check'),
   }),
-  extraDiscoverySources: Schema.object({
-    auto: nonNegativeInteger(0, EXTRA_DISCOVERY_SOURCES_MAX),
-    coding_docs: nonNegativeInteger(0, EXTRA_DISCOVERY_SOURCES_MAX),
-    code_examples: nonNegativeInteger(0, EXTRA_DISCOVERY_SOURCES_MAX),
-    project_research: nonNegativeInteger(0, EXTRA_DISCOVERY_SOURCES_MAX),
-    academic: nonNegativeInteger(0, EXTRA_DISCOVERY_SOURCES_MAX),
-    fact_check: nonNegativeInteger(0, EXTRA_DISCOVERY_SOURCES_MAX),
+  supplementalSearch: Schema.object({
+    exa: Schema.boolean().default(false),
+    tavily: Schema.boolean().default(false),
+    firecrawl: Schema.boolean().default(false),
+    maxSourcesPerProvider: positiveInteger(5, SUPPLEMENTAL_SEARCH_MAX_SOURCES),
   }),
   retention: Schema.object({
     searchQueryMaxCharacters: positiveInteger(32_000, 1_000_000),

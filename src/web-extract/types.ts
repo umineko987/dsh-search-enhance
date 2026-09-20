@@ -19,6 +19,17 @@ export const WEB_EXTRACT_ROUTES = [
 ] as const
 export type WebExtractRoute = (typeof WEB_EXTRACT_ROUTES)[number]
 
+/** The user's enabled Provider set, independent of credential availability. */
+export function enabledWebExtractProviders(config: Config): readonly WebExtractRoute[] {
+  const keys = {
+    tavily_extract: 'tavily',
+    firecrawl_scrape: 'firecrawl',
+    smart_direct: 'smartDirect',
+    direct: 'direct',
+  } as const
+  return WEB_EXTRACT_ROUTES.filter(route => config.webExtract[keys[route]].enabled)
+}
+
 /** Evidence classes exposed by the result contract. */
 export const WEB_EXTRACT_EVIDENCE_LEVELS = [
   'extracted_content',
@@ -45,6 +56,7 @@ export type WebExtractRouteAttempt = Omit<ProviderAttemptRecord, 'capability' | 
 /** Input accepted by the registration-free orchestrator. */
 export interface WebExtractInput {
   readonly url: string
+  readonly provider: WebExtractRoute
   readonly format?: WebExtractFormat
   /** Optional operation snapshot; otherwise the orchestrator reads Config once. */
   readonly config?: Config
@@ -150,7 +162,7 @@ export interface WebExtractAdapter {
   extract(input: WebExtractAdapterInput): Promise<WebExtractAdapterOutcome>
 }
 
-/** Dependencies for the fixed Tavily → Firecrawl → smart_direct → direct chain. */
+/** Independently selectable extraction adapters. */
 export interface WebExtractOrchestratorDependencies {
   readonly tavilyExtract: WebExtractAdapter
   readonly firecrawlScrape: WebExtractAdapter
@@ -196,7 +208,7 @@ export type WebExtractResultCandidate = Omit<WebExtractResult, 'attempts'> & {
 }
 
 /**
- * Unified all-routes infrastructure failure. `routeStatuses` is safe to log
+ * Selected-Provider infrastructure failure. `routeStatuses` is safe to log
  * and contains only fixed route/status fields; raw Provider errors are not
  * retained. Cancellation never becomes this error.
  */
@@ -207,7 +219,7 @@ export class WebExtractInfrastructureError extends Error {
   readonly routeStatuses: readonly WebExtractRouteAttempt[]
 
   constructor(routeStatuses: readonly WebExtractRouteAttempt[]) {
-    super('web_extract: all extraction routes failed')
+    super('web_extract: selected extraction provider failed')
     this.name = 'WebExtractInfrastructureError'
     this.routeStatuses = Object.freeze(routeStatuses.map(status => Object.freeze({ ...status })))
   }

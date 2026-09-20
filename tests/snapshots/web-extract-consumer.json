@@ -118,13 +118,23 @@
     },
     {
       "name": "web_extract",
-      "description": "Read a specific HTTP(S) URL through independent extraction/direct routes. No JavaScript or login; host-reachable addresses may be accessed, and evidence differs by route.",
+      "description": "Preferred tool for readable webpage bodies: articles, blogs, repository READMEs, and model cards. For raw JSON APIs or XML/Atom feeds, prefer the host web_fetch when available. Read one HTTP(S) URL using exactly one explicitly selected Provider; failures never switch Providers. Enabled Providers: tavily_extract, firecrawl_scrape, smart_direct, direct. No JavaScript or login in local routes; host-reachable addresses may be accessed, and evidence differs by route.",
       "parameters": {
         "type": "object",
         "properties": {
           "url": {
             "type": "string",
             "description": "A non-empty concrete HTTP(S) URL to read."
+          },
+          "provider": {
+            "type": "string",
+            "description": "Choose exactly one Provider enabled in user settings. No automatic fallback.",
+            "enum": [
+              "tavily_extract",
+              "firecrawl_scrape",
+              "smart_direct",
+              "direct"
+            ]
           },
           "format": {
             "type": "string",
@@ -140,7 +150,8 @@
           }
         },
         "required": [
-          "url"
+          "url",
+          "provider"
         ]
       }
     },
@@ -192,20 +203,11 @@
       "truncated": false,
       "attempts": [
         {
-          "route": "tavily_extract",
-          "outcome": "failed",
-          "count": 1,
-          "duration_ms": "<duration-ms>",
-          "fallback": false,
-          "error_kind": "unavailable",
-          "retryable": false
-        },
-        {
           "route": "firecrawl_scrape",
           "outcome": "success",
           "count": 1,
           "duration_ms": "<duration-ms>",
-          "fallback": true
+          "fallback": false
         }
       ],
       "model_text_max_bytes": 4096
@@ -228,29 +230,11 @@
       "truncated": false,
       "attempts": [
         {
-          "route": "tavily_extract",
-          "outcome": "failed",
-          "count": 1,
-          "duration_ms": "<duration-ms>",
-          "fallback": false,
-          "error_kind": "unavailable",
-          "retryable": false
-        },
-        {
-          "route": "firecrawl_scrape",
-          "outcome": "failed",
-          "count": 1,
-          "duration_ms": "<duration-ms>",
-          "fallback": true,
-          "error_kind": "unavailable",
-          "retryable": false
-        },
-        {
           "route": "smart_direct",
           "outcome": "success",
           "count": 1,
           "duration_ms": "<duration-ms>",
-          "fallback": true
+          "fallback": false
         }
       ],
       "model_text_max_bytes": 4096
@@ -270,30 +254,6 @@
       "evidence_level": "direct_http_content",
       "truncated": false,
       "attempts": [
-        {
-          "route": "tavily_extract",
-          "outcome": "skipped",
-          "count": 0,
-          "duration_ms": "<duration-ms>",
-          "fallback": false,
-          "skip_reason": "format_unsupported"
-        },
-        {
-          "route": "firecrawl_scrape",
-          "outcome": "skipped",
-          "count": 0,
-          "duration_ms": "<duration-ms>",
-          "fallback": false,
-          "skip_reason": "format_unsupported"
-        },
-        {
-          "route": "smart_direct",
-          "outcome": "skipped",
-          "count": 0,
-          "duration_ms": "<duration-ms>",
-          "fallback": false,
-          "skip_reason": "format_unsupported"
-        },
         {
           "route": "direct",
           "outcome": "success",
@@ -319,36 +279,11 @@
       "truncated": false,
       "attempts": [
         {
-          "route": "tavily_extract",
-          "outcome": "skipped",
-          "count": 0,
-          "duration_ms": "<duration-ms>",
-          "fallback": false,
-          "skip_reason": "format_unsupported"
-        },
-        {
-          "route": "firecrawl_scrape",
-          "outcome": "failed",
-          "count": 1,
-          "duration_ms": "<duration-ms>",
-          "fallback": false,
-          "error_kind": "unavailable",
-          "retryable": false
-        },
-        {
-          "route": "smart_direct",
-          "outcome": "skipped",
-          "count": 0,
-          "duration_ms": "<duration-ms>",
-          "fallback": false,
-          "skip_reason": "format_unsupported"
-        },
-        {
           "route": "direct",
           "outcome": "success",
           "count": 1,
           "duration_ms": "<duration-ms>",
-          "fallback": true
+          "fallback": false
         }
       ],
       "model_text_max_bytes": 4096
@@ -370,36 +305,11 @@
       "truncated": true,
       "attempts": [
         {
-          "route": "tavily_extract",
-          "outcome": "skipped",
-          "count": 0,
-          "duration_ms": "<duration-ms>",
-          "fallback": false,
-          "skip_reason": "format_unsupported"
-        },
-        {
-          "route": "firecrawl_scrape",
-          "outcome": "failed",
-          "count": 1,
-          "duration_ms": "<duration-ms>",
-          "fallback": false,
-          "error_kind": "unavailable",
-          "retryable": false
-        },
-        {
-          "route": "smart_direct",
-          "outcome": "skipped",
-          "count": 0,
-          "duration_ms": "<duration-ms>",
-          "fallback": false,
-          "skip_reason": "format_unsupported"
-        },
-        {
           "route": "direct",
           "outcome": "success",
           "count": 1,
           "duration_ms": "<duration-ms>",
-          "fallback": true
+          "fallback": false
         }
       ],
       "model_text_max_bytes": 4096
@@ -435,31 +345,31 @@
     "firecrawl": [
       {
         "type": "text",
-        "text": "Requested URL: <fixture-origin>/target/firecrawl\nFinal URL: <fixture-origin>/target/firecrawl\nRetrieval route: firecrawl_scrape\nEvidence level: extracted_content\nFormat: markdown\nTruncated: no\nTitle: Firecrawl extracted fixture\nPath limitation: third-party extracted content may be abridged or reordered; no target HTTP status is inferred when the Provider did not supply one.\n\nContent\nFirecrawl fallback extracted content.\n\nRoute attempts\n- tavily_extract: outcome=failed, count=1, duration_ms=<duration-ms>, fallback=false, error_kind=unavailable, retryable=false\n- firecrawl_scrape: outcome=success, count=1, duration_ms=<duration-ms>, fallback=true"
+        "text": "Requested URL: <fixture-origin>/target/firecrawl\nFinal URL: <fixture-origin>/target/firecrawl\nRetrieval route: firecrawl_scrape\nEvidence level: extracted_content\nFormat: markdown\nTruncated: no\nTitle: Firecrawl extracted fixture\nPath limitation: third-party extracted content may be abridged or reordered; no target HTTP status is inferred when the Provider did not supply one.\n\nContent\nFirecrawl fallback extracted content.\n\nRoute attempts\n- firecrawl_scrape: outcome=success, count=1, duration_ms=<duration-ms>, fallback=false"
       }
     ],
     "smart": [
       {
         "type": "text",
-        "text": "Requested URL: <fixture-origin>/target/smart\nFinal URL: <fixture-origin>/target/smart\nRetrieval route: smart_direct\nEvidence level: extracted_content\nHTTP status: 200\nContent-Type: text/html; charset=utf-8\nFormat: markdown\nTruncated: no\nTitle: Smart fixture\nAuthor: Ada Smart\nCanonical URL: <fixture-origin>/target/smart\nContent-Length: 453\nEncoded bytes observed: 453\nDecompressed bytes observed: 453\nPath limitation: the host made a fingerprinted static HTTP request, but Defuddle may select, abridge, or reorder content; no JavaScript or login session was used.\n\nContent\n## Smart direct fixture\n\nThis stable local HTML has enough meaningful words for Defuddle to select readable content without JavaScript or a login session.\n\nA second paragraph keeps the deterministic extraction path non-empty and replayable.\n\nRoute attempts\n- tavily_extract: outcome=failed, count=1, duration_ms=<duration-ms>, fallback=false, error_kind=unavailable, retryable=false\n- firecrawl_scrape: outcome=failed, count=1, duration_ms=<duration-ms>, fallback=true, error_kind=unavailable, retryable=false\n- smart_direct: outcome=success, count=1, duration_ms=<duration-ms>, fallback=true"
+        "text": "Requested URL: <fixture-origin>/target/smart\nFinal URL: <fixture-origin>/target/smart\nRetrieval route: smart_direct\nEvidence level: extracted_content\nHTTP status: 200\nContent-Type: text/html; charset=utf-8\nFormat: markdown\nTruncated: no\nTitle: Smart fixture\nAuthor: Ada Smart\nCanonical URL: <fixture-origin>/target/smart\nContent-Length: 453\nEncoded bytes observed: 453\nDecompressed bytes observed: 453\nPath limitation: the host made a fingerprinted static HTTP request, but Defuddle may select, abridge, or reorder content; no JavaScript or login session was used.\n\nContent\n## Smart direct fixture\n\nThis stable local HTML has enough meaningful words for Defuddle to select readable content without JavaScript or a login session.\n\nA second paragraph keeps the deterministic extraction path non-empty and replayable.\n\nRoute attempts\n- smart_direct: outcome=success, count=1, duration_ms=<duration-ms>, fallback=false"
       }
     ],
     "direct_json": [
       {
         "type": "text",
-        "text": "Requested URL: <fixture-origin>/target/direct-json\nFinal URL: <fixture-origin>/target/direct-json\nRetrieval route: direct\nEvidence level: direct_http_content\nHTTP status: 200\nContent-Type: application/json\nFormat: json\nTruncated: no\nContent-Length: 45\nEncoded bytes observed: 45\nDecompressed bytes observed: 45\nContent transform: json_pretty\nPath limitation: direct host HTTP used no JavaScript or login session; content may be transformed or truncated, as reported below.\n\nContent\n{\n  \"fixture\": \"direct-json\",\n  \"unicode\": \"界🙂\"\n}\n\nRoute attempts\n- tavily_extract: outcome=skipped, count=0, duration_ms=<duration-ms>, fallback=false, skip_reason=format_unsupported\n- firecrawl_scrape: outcome=skipped, count=0, duration_ms=<duration-ms>, fallback=false, skip_reason=format_unsupported\n- smart_direct: outcome=skipped, count=0, duration_ms=<duration-ms>, fallback=false, skip_reason=format_unsupported\n- direct: outcome=success, count=1, duration_ms=<duration-ms>, fallback=false"
+        "text": "Requested URL: <fixture-origin>/target/direct-json\nFinal URL: <fixture-origin>/target/direct-json\nRetrieval route: direct\nEvidence level: direct_http_content\nHTTP status: 200\nContent-Type: application/json\nFormat: json\nTruncated: no\nContent-Length: 45\nEncoded bytes observed: 45\nDecompressed bytes observed: 45\nContent transform: json_pretty\nPath limitation: direct host HTTP used no JavaScript or login session; content may be transformed or truncated, as reported below.\n\nContent\n{\n  \"fixture\": \"direct-json\",\n  \"unicode\": \"界🙂\"\n}\n\nRoute attempts\n- direct: outcome=success, count=1, duration_ms=<duration-ms>, fallback=false"
       }
     ],
     "direct_raw": [
       {
         "type": "text",
-        "text": "Requested URL: <fixture-origin>/target/direct-raw\nFinal URL: <fixture-origin>/target/direct-raw\nRetrieval route: direct\nEvidence level: direct_http_content\nHTTP status: 200\nContent-Type: text/plain; charset=utf-8\nFormat: raw\nTruncated: no\nContent-Length: 39\nEncoded bytes observed: 39\nDecompressed bytes observed: 39\nPath limitation: direct host HTTP used no JavaScript or login session; content may be transformed or truncated, as reported below.\n\nContent\nraw direct fixture <tag>preserved</tag>\n\nRoute attempts\n- tavily_extract: outcome=skipped, count=0, duration_ms=<duration-ms>, fallback=false, skip_reason=format_unsupported\n- firecrawl_scrape: outcome=failed, count=1, duration_ms=<duration-ms>, fallback=false, error_kind=unavailable, retryable=false\n- smart_direct: outcome=skipped, count=0, duration_ms=<duration-ms>, fallback=false, skip_reason=format_unsupported\n- direct: outcome=success, count=1, duration_ms=<duration-ms>, fallback=true"
+        "text": "Requested URL: <fixture-origin>/target/direct-raw\nFinal URL: <fixture-origin>/target/direct-raw\nRetrieval route: direct\nEvidence level: direct_http_content\nHTTP status: 200\nContent-Type: text/plain; charset=utf-8\nFormat: raw\nTruncated: no\nContent-Length: 39\nEncoded bytes observed: 39\nDecompressed bytes observed: 39\nPath limitation: direct host HTTP used no JavaScript or login session; content may be transformed or truncated, as reported below.\n\nContent\nraw direct fixture <tag>preserved</tag>\n\nRoute attempts\n- direct: outcome=success, count=1, duration_ms=<duration-ms>, fallback=false"
       }
     ],
     "metadata_only": [
       {
         "type": "text",
-        "text": "Requested URL: <fixture-origin>/target/metadata-only\nFinal URL: <fixture-origin>/target/metadata-only\nRetrieval route: direct\nEvidence level: direct_http_content\nHTTP status: 200\nContent-Type: application/octet-stream\nFormat: raw\nTruncated: yes\nContent-Length: 6\nContent-Disposition: attachment; filename=\"fixture.bin\"\nEncoded bytes observed: 0\nDecompressed bytes observed: 0\nMetadata-only reason: attachment\nPath limitation: direct host HTTP used no JavaScript or login session; content may be transformed or truncated, as reported below.\n\nContent\n[Direct fetch metadata only: the response declares an attachment, so its body was not injected.]\n\nRoute attempts\n- tavily_extract: outcome=skipped, count=0, duration_ms=<duration-ms>, fallback=false, skip_reason=format_unsupported\n- firecrawl_scrape: outcome=failed, count=1, duration_ms=<duration-ms>, fallback=false, error_kind=unavailable, retryable=false\n- smart_direct: outcome=skipped, count=0, duration_ms=<duration-ms>, fallback=false, skip_reason=format_unsupported\n- direct: outcome=success, count=1, duration_ms=<duration-ms>, fallback=true"
+        "text": "Requested URL: <fixture-origin>/target/metadata-only\nFinal URL: <fixture-origin>/target/metadata-only\nRetrieval route: direct\nEvidence level: direct_http_content\nHTTP status: 200\nContent-Type: application/octet-stream\nFormat: raw\nTruncated: yes\nContent-Length: 6\nContent-Disposition: attachment; filename=\"fixture.bin\"\nEncoded bytes observed: 0\nDecompressed bytes observed: 0\nMetadata-only reason: attachment\nPath limitation: direct host HTTP used no JavaScript or login session; content may be transformed or truncated, as reported below.\n\nContent\n[Direct fetch metadata only: the response declares an attachment, so its body was not injected.]\n\nRoute attempts\n- direct: outcome=success, count=1, duration_ms=<duration-ms>, fallback=false"
       }
     ],
     "spill": [
@@ -521,7 +431,7 @@
       "content": [
         {
           "type": "text",
-          "text": "Error: SEARCH_WEB_EXTRACT_FAILED: tavily_extract[outcome=failed,count=1,duration_ms=<duration-ms>,fallback=false,error_kind=unavailable,retryable=false]; firecrawl_scrape[outcome=failed,count=1,duration_ms=<duration-ms>,fallback=true,error_kind=unavailable,retryable=false]; smart_direct[outcome=failed,count=1,duration_ms=<duration-ms>,fallback=true,error_kind=network,retryable=true]; direct[outcome=failed,count=1,duration_ms=<duration-ms>,fallback=true,error_kind=network,retryable=true]"
+          "text": "Error: SEARCH_WEB_EXTRACT_FAILED: tavily_extract[outcome=failed,count=1,duration_ms=<duration-ms>,fallback=false,error_kind=unavailable,retryable=false]"
         }
       ],
       "error_info": {
@@ -584,11 +494,12 @@
       {
         "rootCallId": "code-spill",
         "parentCallId": "code-spill",
-        "subCallId": "code-spill:code:1",
+        "subCallId": "code-spill:ptc:1",
         "name": "web_extract",
         "arguments": {
           "url": "<fixture-origin>/target/spill",
-          "format": "markdown"
+          "format": "markdown",
+          "provider": "tavily_extract"
         },
         "isError": false,
         "content": [
@@ -607,7 +518,8 @@
       "name": "web_extract",
       "arguments": {
         "url": "<fixture-origin>/target/spill",
-        "format": "markdown"
+        "format": "markdown",
+        "provider": "tavily_extract"
       }
     },
     {
@@ -634,30 +546,32 @@
       "callId": "code-spill",
       "name": "run_code",
       "arguments": {
-        "code": "return await tools.web_extract({ url: \"<fixture-origin>/target/spill\", format: 'markdown' });",
+        "code": "return await tools.web_extract({ url: \"<fixture-origin>/target/spill\", format: 'markdown', provider: 'tavily_extract' });",
         "description": "Read the long fixture through web_extract"
       }
     },
     {
-      "type": "tool/code-dispatch-start",
+      "type": "tool/ptc-dispatch-start",
       "rootCallId": "code-spill",
       "parentCallId": "code-spill",
-      "subCallId": "code-spill:code:1",
+      "subCallId": "code-spill:ptc:1",
       "name": "web_extract",
       "arguments": {
         "url": "<fixture-origin>/target/spill",
-        "format": "markdown"
+        "format": "markdown",
+        "provider": "tavily_extract"
       }
     },
     {
-      "type": "tool/code-dispatch",
+      "type": "tool/ptc-dispatch",
       "rootCallId": "code-spill",
       "parentCallId": "code-spill",
-      "subCallId": "code-spill:code:1",
+      "subCallId": "code-spill:ptc:1",
       "name": "web_extract",
       "arguments": {
         "url": "<fixture-origin>/target/spill",
-        "format": "markdown"
+        "format": "markdown",
+        "provider": "tavily_extract"
       },
       "isError": false,
       "content": [
@@ -715,30 +629,6 @@
     "truncated": false,
     "attempts": [
       {
-        "route": "tavily_extract",
-        "outcome": "skipped",
-        "count": 0,
-        "duration_ms": "<duration-ms>",
-        "fallback": false,
-        "skip_reason": "format_unsupported"
-      },
-      {
-        "route": "firecrawl_scrape",
-        "outcome": "skipped",
-        "count": 0,
-        "duration_ms": "<duration-ms>",
-        "fallback": false,
-        "skip_reason": "format_unsupported"
-      },
-      {
-        "route": "smart_direct",
-        "outcome": "skipped",
-        "count": 0,
-        "duration_ms": "<duration-ms>",
-        "fallback": false,
-        "skip_reason": "format_unsupported"
-      },
-      {
         "route": "direct",
         "outcome": "success",
         "count": 1,
@@ -781,30 +671,9 @@
     },
     {
       "method": "POST",
-      "url": "/tavily/extract",
-      "authorization": "<redacted>",
-      "target": "/target/firecrawl",
-      "format": "markdown"
-    },
-    {
-      "method": "POST",
       "url": "/firecrawl/v2/scrape",
       "authorization": "<redacted>",
       "target": "/target/firecrawl",
-      "format": "markdown"
-    },
-    {
-      "method": "POST",
-      "url": "/tavily/extract",
-      "authorization": "<redacted>",
-      "target": "/target/smart",
-      "format": "markdown"
-    },
-    {
-      "method": "POST",
-      "url": "/firecrawl/v2/scrape",
-      "authorization": "<redacted>",
-      "target": "/target/smart",
       "format": "markdown"
     },
     {
@@ -816,22 +685,8 @@
       "url": "/target/direct-json"
     },
     {
-      "method": "POST",
-      "url": "/firecrawl/v2/scrape",
-      "authorization": "<redacted>",
-      "target": "/target/direct-raw",
-      "format": "rawHtml"
-    },
-    {
       "method": "GET",
       "url": "/target/direct-raw"
-    },
-    {
-      "method": "POST",
-      "url": "/firecrawl/v2/scrape",
-      "authorization": "<redacted>",
-      "target": "/target/metadata-only",
-      "format": "rawHtml"
     },
     {
       "method": "GET",
@@ -843,21 +698,6 @@
       "authorization": "<redacted>",
       "target": "/target/all-fail",
       "format": "markdown"
-    },
-    {
-      "method": "POST",
-      "url": "/firecrawl/v2/scrape",
-      "authorization": "<redacted>",
-      "target": "/target/all-fail",
-      "format": "markdown"
-    },
-    {
-      "method": "GET",
-      "url": "/target/all-fail"
-    },
-    {
-      "method": "GET",
-      "url": "/target/all-fail"
     },
     {
       "method": "POST",

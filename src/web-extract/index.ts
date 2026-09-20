@@ -5,7 +5,6 @@ export {
   normalizeWebExtractUrl,
 } from './url.js'
 export {
-  WebExtractAutoOrchestrator,
   WebExtractOrchestrator,
   webExtractBudgetError,
 } from './orchestrator.js'
@@ -67,6 +66,7 @@ export {
   DIRECT_METADATA_ONLY_REASONS,
   WebExtractInfrastructureError,
   evidenceLevelForRoute,
+  enabledWebExtractProviders,
   isWebExtractFormat,
   isWebExtractRoute,
   WEB_EXTRACT_EVIDENCE_LEVELS,

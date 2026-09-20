@@ -50,6 +50,8 @@ export interface ParsedSearchApiResponse {
   readonly answer: string
   readonly sources: readonly CanonicalSource[]
   readonly sourcesTruncated: boolean
+  /** API-reported completed search or structured citation, never inferred from prose links. */
+  readonly searchActivity?: true
 }
 
 type UnknownRecord = Record<string, unknown>
@@ -827,7 +829,75 @@ function parseObjectJson(value: string): UnknownRecord {
   return parsed
 }
 
-function extractSseText(body: string, protocol: SearchApiProtocol, maxEvents: number): string {
+/** Read only known protocol metadata paths, under the same source and nesting limits. */
+function collectSearchMetadata(
+  data: UnknownRecord,
+  state: MutableSourceState,
+  limits: SearchResponseParseLimits,
+  depth = 0,
+): boolean {
+  if (depth > limits.maxSourceNesting) {
+    throw new SearchResponseParseError('limit', { actual: depth, maximum: limits.maxSourceNesting })
+  }
+  let reported = (data.type === 'web_search_call' || data.type === 'x_search_call')
+    && data.status === 'completed'
+  const addCitation = (value: unknown): void => {
+    if (!isRecord(value) || value.type !== 'url_citation') return
+    const citation = value.url_citation === undefined ? value : value.url_citation
+    if (!isRecord(citation)) return malformed()
+    if (typeof citation.url !== 'string') return malformed()
+    if (validatedHttpUrl(citation.url, limits) === undefined) return
+    const title = boundedOptionalString(citation.title, limits.maxTitleCharacters)
+    normalizeSourceItem({
+      ...citation,
+      title: title !== undefined && !isCitationOrdinalLabel(title) ? title : undefined,
+    }, state, limits)
+    reported = true
+  }
+  if (data.annotations !== undefined && data.annotations !== null) {
+    if (!Array.isArray(data.annotations)) return malformed()
+    for (const annotation of data.annotations) addCitation(annotation)
+  }
+  if (data.type === 'response.output_text.annotation.added') addCitation(data.annotation)
+  if (Array.isArray(data.citations)) {
+    for (const citation of data.citations) {
+      if (typeof citation === 'string' && validatedHttpUrl(citation, limits) !== undefined) {
+        addSource(state, { url: citation }, limits)
+        reported = true
+      }
+    }
+  }
+  if (isRecord(data.usage) && isRecord(data.usage.server_tool_use)) {
+    const count = data.usage.server_tool_use.web_search_requests
+    if (typeof count === 'number' && Number.isSafeInteger(count) && count > 0) reported = true
+  }
+  const visit = (value: unknown): void => {
+    if (isRecord(value)) reported = collectSearchMetadata(value, state, limits, depth + 1) || reported
+  }
+  if (Array.isArray(data.choices)) visit(data.choices[0])
+  for (const key of ['response', 'message', 'delta', 'item', 'part']) visit(data[key])
+  for (const key of ['output', 'content']) {
+    const items = data[key]
+    if (Array.isArray(items)) for (const item of items) visit(item)
+  }
+  return reported
+}
+
+function assertResponseSuccess(data: UnknownRecord): void {
+  const envelope = isRecord(data.response) ? data.response : data
+  if (
+    (data.error !== undefined && data.error !== null)
+    || (envelope.error !== undefined && envelope.error !== null)
+    || envelope.status === 'failed' || envelope.status === 'incomplete'
+    || data.type === 'error' || data.type === 'response.failed' || data.type === 'response.incomplete'
+  ) malformed()
+}
+
+function extractSseText(
+  body: string,
+  extract: (data: UnknownRecord) => TextExtraction,
+  maxEvents: number,
+): string {
   let deltaText = ''
   let finalText = ''
   let recognized = false
@@ -846,18 +916,18 @@ function extractSseText(body: string, protocol: SearchApiProtocol, maxEvents: nu
       recognized = true
       continue
     }
-    const extracted = extractProtocolText(parseObjectJson(payload), protocol)
+    const extracted = extract(parseObjectJson(payload))
     recognized ||= extracted.recognized
     if (extracted.kind === 'delta') deltaText += extracted.text
     else if (extracted.kind === 'final') finalText = extracted.text
   }
 
   if (!recognized) return malformed()
-  return deltaText || finalText
+  return finalText || deltaText
 }
 
-function extractJsonText(body: string, protocol: SearchApiProtocol): string {
-  const extracted = extractProtocolText(parseObjectJson(body), protocol)
+function extractJsonText(body: string, extract: (data: UnknownRecord) => TextExtraction): string {
+  const extracted = extract(parseObjectJson(body))
   if (!extracted.recognized) return malformed()
   return extracted.text
 }
@@ -886,8 +956,23 @@ export function parseSearchApiResponse(
   }
   if (body.trim().length === 0) return malformed()
 
+  const state: MutableSourceState = { sourceIndexByUrl: new Map(), sources: [], truncated: false }
+  let searchActivity = false
+  const extract = (data: UnknownRecord): TextExtraction => {
+    assertResponseSuccess(data)
+    searchActivity = collectSearchMetadata(data, state, limits) || searchActivity
+    return extractProtocolText(data, protocol)
+  }
   const text = /(?:^|\n)\s*data:/.test(body)
-    ? extractSseText(body, protocol, limits.maxSseEvents)
-    : extractJsonText(body, protocol)
-  return parseSearchAnswerText(text, limits)
+    ? extractSseText(body, extract, limits.maxSseEvents)
+    : extractJsonText(body, extract)
+  const parsed = parseSearchAnswerText(text, limits)
+  // Structured citations take precedence over a model-authored trailing source list.
+  for (const source of parsed.sources) addSource(state, source, limits)
+  return Object.freeze({
+    answer: parsed.answer,
+    sources: Object.freeze(state.sources),
+    sourcesTruncated: state.truncated || parsed.sourcesTruncated,
+    ...(searchActivity ? { searchActivity: true as const } : {}),
+  })
 }

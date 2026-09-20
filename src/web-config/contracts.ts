@@ -15,30 +15,17 @@ export const WEB_CREDENTIAL_SLOTS = [
 
 export type WebCredentialSlot = (typeof WEB_CREDENTIAL_SLOTS)[number]
 
-/**
- * Search profiles that carry an editable supplementary discovery budget. The
- * list is spelled here rather than imported: this contract is also the browser
- * half, and a client module must not depend on the Host configuration module.
- * The Host contract test keeps this list aligned with the configuration schema.
- */
-export const WEB_EXTRA_DISCOVERY_PROFILES = [
-  'auto',
-  'coding_docs',
-  'code_examples',
-  'project_research',
-  'academic',
-  'fact_check',
-] as const
-
-export type WebExtraDiscoveryProfile = (typeof WEB_EXTRA_DISCOVERY_PROFILES)[number]
-export type WebExtraDiscoverySources = Record<WebExtraDiscoveryProfile, number>
+export const WEB_SUPPLEMENTAL_SEARCH_PROVIDERS = ['exa', 'tavily', 'firecrawl'] as const
+export const WEB_EXTRACT_PROVIDER_KEYS = ['tavily', 'firecrawl', 'smartDirect', 'direct'] as const
 
 export const WEB_EDITABLE_PATHS: readonly (readonly string[])[] = [
   ['defaultProfile'],
   ['defaultDepth'],
   ['toolTimeoutMs'],
   ['toolDiscovery', 'mode'],
-  ...WEB_EXTRA_DISCOVERY_PROFILES.map(profile => ['extraDiscoverySources', profile]),
+  ...WEB_SUPPLEMENTAL_SEARCH_PROVIDERS.map(provider => ['supplementalSearch', provider]),
+  ['supplementalSearch', 'maxSourcesPerProvider'],
+  ...WEB_EXTRACT_PROVIDER_KEYS.map(provider => ['webExtract', provider, 'enabled']),
   ['searchApi', 'baseUrl'],
   ['searchApi', 'protocol'],
   ['searchApi', 'model'],
@@ -77,6 +64,7 @@ export interface WebDiscoveryProviderConfig {
 }
 
 export interface WebProxyConfig {
+  enabled: boolean
   proxyUrl: string
 }
 
@@ -87,7 +75,9 @@ export interface WebEditableConfig {
   toolDiscovery: {
     mode: string
   }
-  extraDiscoverySources: WebExtraDiscoverySources
+  supplementalSearch: Record<(typeof WEB_SUPPLEMENTAL_SEARCH_PROVIDERS)[number], boolean> & {
+    maxSourcesPerProvider: number
+  }
   searchApi: WebSearchApiConfig
   providers: {
     context7: WebDiscoveryProviderConfig
@@ -96,6 +86,8 @@ export interface WebEditableConfig {
     firecrawl: WebDiscoveryProviderConfig
   }
   webExtract: {
+    tavily: { enabled: boolean }
+    firecrawl: { enabled: boolean }
     smartDirect: WebProxyConfig
     direct: WebProxyConfig
   }
@@ -116,7 +108,7 @@ export interface WebConfigOptions {
   thinkingLevels: readonly string[]
   toolDiscoveryModes: readonly string[]
   proxyUrlMaxCharacters: number
-  extraDiscoveryMaxSources: number
+  supplementalSearchMaxSources: number
 }
 
 export interface WebCredentialState {
@@ -165,7 +157,7 @@ export interface WebConfigSnapshot {
 export type WebSettingsMutation = {
   op: 'set'
   path: readonly string[]
-  value: string | number
+  value: string | number | boolean
 } | {
   op: 'unset'
   path: readonly string[]

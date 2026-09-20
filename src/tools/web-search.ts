@@ -237,6 +237,7 @@ export function createWebSearchTool(
     name: 'web_search',
     description: 'Recommended entry point for ordinary search. Returns a bounded answer and discovery-level source metadata; snippets are not verified webpage-body evidence.',
     parameters: WEB_SEARCH_PARAMETERS,
+    isConcurrencySafe: () => true,
     output: {
       schema: WEB_SEARCH_OUTPUT_SCHEMA,
       render: (_args, value) => [{

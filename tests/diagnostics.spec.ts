@@ -52,11 +52,7 @@ function config(overrides: Partial<SearchEnhanceConfig> = {}): SearchEnhanceConf
     ...base,
     ...overrides,
     diagnostics: { ...base.diagnostics, ...overrides.diagnostics },
-    extraDiscoverySources: {
-      ...base.extraDiscoverySources,
-      auto: 1,
-      ...overrides.extraDiscoverySources,
-    },
+    supplementalSearch: { ...base.supplementalSearch, tavily: true, firecrawl: true, ...overrides.supplementalSearch },
     providers: {
       ...base.providers,
       ...overrides.providers,
@@ -90,6 +86,7 @@ function probe(
 
 const networkProbeSet = (): readonly DiagnosticProbe[] => [
   probe('main_search', 'search_api'),
+  probe('main_search', 'exa'),
   probe('main_search', 'tavily_search'),
   probe('main_search', 'firecrawl_search'),
   probe('docs_search', 'context7'),
@@ -227,7 +224,7 @@ describe('search diagnostics status and probe orchestration', () => {
     expect(text).not.toContain(value.searchApi.baseUrl)
   })
 
-  it('runs fixed supported probes once in stable order and reports every route exactly once', async () => {
+  it.each([false, true])('probes each supported selected route once (supplemental Exa: %s)', async (exa) => {
     const starts: string[] = []
     const probes = networkProbeSet().map(item => probe(
       item.capability,
@@ -246,12 +243,13 @@ describe('search diagnostics status and probe orchestration', () => {
     })
 
     const report = await reporter.test({
-      config: config(),
+      config: config({ supplementalSearch: { ...config().supplementalSearch, exa } }),
       signal: new AbortController().signal,
     })
 
     expect(starts).toEqual([
       'main_search/search_api',
+      ...(exa ? ['main_search/exa'] : []),
       'main_search/tavily_search',
       'main_search/firecrawl_search',
       'docs_search/context7',
@@ -259,6 +257,7 @@ describe('search diagnostics status and probe orchestration', () => {
     ])
     expect(report.providerAttempts.map(item => `${item.capability}/${item.provider}`)).toEqual([
       'main_search/search_api',
+      'main_search/exa',
       'main_search/tavily_search',
       'main_search/firecrawl_search',
       'docs_search/context7',
@@ -269,17 +268,12 @@ describe('search diagnostics status and probe orchestration', () => {
       'web_extract/direct',
       'site_map/tavily_map',
     ])
-    expect(report.providerAttempts.slice(0, 5)).toEqual(expect.arrayContaining([
-      expect.objectContaining({ outcome: 'success', attempts: 1 }),
-    ]))
-    expect(report.providerAttempts.slice(5).every(item => item.outcome === 'unsupported')).toBe(true)
-    expect(report.providersUsed).toEqual([
-      'search_api',
-      'tavily_search',
-      'firecrawl_search',
-      'context7',
-      'exa',
-    ])
+    expect(report.providerAttempts.filter(item => item.outcome === 'success')).toHaveLength(exa ? 6 : 5)
+    expect(report.providerAttempts.find(item => item.capability === 'main_search' && item.provider === 'exa'))
+      .toMatchObject(exa ? { outcome: 'success', attempts: 1 } : { outcome: 'disabled', attempts: 0 })
+    expect(report.providerAttempts.filter(item => item.capability === 'web_extract' || item.capability === 'site_map')
+      .every(item => item.outcome === 'unsupported')).toBe(true)
+    expect(report.providersUsed).toEqual(['search_api', 'tavily_search', 'firecrawl_search', 'context7', 'exa'])
     expect(report.fallbackUsed).toBe(false)
     expect(report.warnings).toContainEqual({ code: 'unsupported', count: 5 })
   })
@@ -304,14 +298,7 @@ describe('search diagnostics status and probe orchestration', () => {
       ],
     })
     const value = config({
-      extraDiscoverySources: {
-        auto: 0,
-        coding_docs: 0,
-        code_examples: 0,
-        project_research: 0,
-        academic: 0,
-        fact_check: 0,
-      },
+      supplementalSearch: { exa: false, tavily: false, firecrawl: false, maxSourcesPerProvider: 5 },
     })
 
     const report = await reporter.test({ config: value, signal: new AbortController().signal })

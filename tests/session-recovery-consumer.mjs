@@ -22,7 +22,7 @@ const snapshotPath = join(packageRoot, 'tests/snapshots/session-recovery.json')
 const dshHome = await mkdtemp(join(tmpdir(), 'dsh-search-enhance-session-recovery-'))
 const loaderConfig = join(dshHome, 'cordis.yml')
 const statePath = join(dshHome, 'recovery-state.json')
-const selfLink = join(packageRoot, 'node_modules', '@kkkneko/dsh-search-enhance')
+const selfLink = join(packageRoot, 'node_modules', 'dsh-search-enhance')
 const searchSecret = 'fresh-process-search-secret'
 const context7Secret = 'fresh-process-context7-secret'
 const childOutputMaxBytes = 64 * 1024
@@ -237,8 +237,6 @@ try {
   config:
     root: ${JSON.stringify(join(dshHome, 'sessions'))}
     compression: none
-    packChunks: false
-    writeBatchMaxDelayMs: 1
 - id: system-prompt
   name: '@deepseek-ai/dsh-system-prompt'
 - id: tools
@@ -266,7 +264,7 @@ try {
   config:
     watch: false
 - id: search-enhance
-  name: '@kkkneko/dsh-search-enhance'
+  name: 'dsh-search-enhance'
   config:
     fallbackMode: off
     searchApi:
@@ -284,8 +282,6 @@ try {
       maxDelayMs: 0
       maxTotalDelayMs: 0
       jitterRatio: 0
-    extraDiscoverySources:
-      auto: 0
     budgets:
       auto:
         compact:

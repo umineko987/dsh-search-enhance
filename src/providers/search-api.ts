@@ -19,6 +19,7 @@ import {
   resolveAutomaticTimeContext,
   resolveSearchStrategy,
   SearchResponseParseError,
+  type ParsedSearchApiResponse,
   type ResolvedSearchStrategy,
   type SearchClock,
   type TimeZoneSource,
@@ -108,6 +109,8 @@ export interface SearchApiSearchResult {
   readonly attempts: number
   readonly totalDelayMs: number
   readonly modelValidation: ModelValidationStatus
+  /** Present only when this adapter enabled native tools; prose links do not confirm search. */
+  readonly nativeSearchReported?: boolean
 }
 
 function finiteNow(now: () => number): number {
@@ -302,7 +305,7 @@ function parseSearchBody(
   body: string,
   prepared: PreparedSearchApiRequest,
   config: Config,
-): { readonly answer: string; readonly sources: readonly CanonicalSource[]; readonly sourcesTruncated: boolean } {
+): ParsedSearchApiResponse {
   try {
     return parseSearchApiResponse(body, prepared.protocol, {
       maxResponseBytes: config.retention.providerResponseMaxBytes,
@@ -588,7 +591,7 @@ export class SearchApiProvider {
     credential: ResolvedCredential,
     signal: AbortSignal,
     onDispatch: (() => void) | undefined,
-  ): Promise<RetryResult<{ readonly answer: string; readonly sources: readonly CanonicalSource[]; readonly sourcesTruncated: boolean }>> {
+  ): Promise<RetryResult<ParsedSearchApiResponse>> {
     return retryProviderOperation({
       attemptTimeoutMs: config.searchApi.timeoutMs,
       capability: 'main_search',
@@ -698,6 +701,8 @@ export class SearchApiProvider {
       sources: dispatched.value.sources,
       sourcesTruncated: dispatched.value.sourcesTruncated,
       totalDelayMs: dispatched.totalDelayMs,
+      ...(prepared.nativeSearch === undefined ? {}
+        : { nativeSearchReported: dispatched.value.searchActivity === true }),
     })
   }
 

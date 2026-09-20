@@ -20,6 +20,7 @@ import {
 } from '../presentation/web-card.js'
 import { renderWebExtractText } from '../presentation/render.js'
 import {
+  enabledWebExtractProviders,
   normalizeWebExtractUrl,
   WebExtractInfrastructureError,
   type WebExtractOrchestrator,
@@ -178,7 +179,7 @@ export class WebExtractToolError extends HarnessError {
 }
 
 function assertOnlyDeclaredArguments(args: WebExtractArgs): void {
-  const unexpected = Object.keys(args).filter(key => key !== 'url' && key !== 'format')
+  const unexpected = Object.keys(args).filter(key => !['url', 'format', 'provider'].includes(key))
   if (unexpected.length > 0) {
     throw new ToolArgsError(unexpected.map(key => `"${key}" is not allowed`))
   }
@@ -205,11 +206,15 @@ async function executeWebExtract(
 ): Promise<WebExtractOutput> {
   assertOnlyDeclaredArguments(args)
   const config = dependencies.getConfig()
+  if (!enabledWebExtractProviders(config).includes(args.provider)) {
+    throw new ToolArgsError(['"provider" must name one of the Providers enabled in user settings'])
+  }
   const url = normalizedArgumentUrl(args, config)
   throwIfAborted(signal)
   try {
     const result = await dependencies.orchestrator.extract({
       url,
+      provider: args.provider,
       ...(args.format === undefined ? {} : { format: args.format }),
       config,
       signal,
@@ -224,14 +229,15 @@ async function executeWebExtract(
   }
 }
 
-/** Build the one global webpage-body Consumer over the fixed four-route chain. */
+/** Build the webpage-body tool over one explicitly chosen Provider. */
 export function createWebExtractTool(
   dependencies: WebExtractToolDependencies,
 ): ToolDefinition {
   return defineTool({
     name: 'web_extract',
-    description: 'Read a specific HTTP(S) URL through independent extraction/direct routes. No JavaScript or login; host-reachable addresses may be accessed, and evidence differs by route.',
+    description: `Preferred tool for readable webpage bodies: articles, blogs, repository READMEs, and model cards. For raw JSON APIs or XML/Atom feeds, prefer the host web_fetch when available. Read one HTTP(S) URL using exactly one explicitly selected Provider; failures never switch Providers. Enabled Providers: ${enabledWebExtractProviders(dependencies.getConfig()).join(', ') || 'none'}. No JavaScript or login in local routes; host-reachable addresses may be accessed, and evidence differs by route.`,
     parameters: WEB_EXTRACT_PARAMETERS,
+    isConcurrencySafe: () => true,
     output: {
       schema: WEB_EXTRACT_OUTPUT_SCHEMA,
       render: (_args, value) => [{ type: 'text', text: renderWebExtractText(value) }],

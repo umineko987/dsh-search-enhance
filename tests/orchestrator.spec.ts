@@ -10,8 +10,6 @@ import type { CanonicalSource, SourceProvider } from '../src/contracts/index.js'
 import {
   boundSearchOrchestrationResult,
   SearchOrchestrator,
-  shouldEnhanceDocumentation,
-  splitDiscoveryBudget,
   type MainSearchProvider,
   type SearchCanonicalResult,
 } from '../src/orchestration/index.js'
@@ -39,7 +37,7 @@ import { SDK_QUALITY_FIXTURE } from './fixtures/source-quality.js'
 interface ConfigOptions {
   readonly profile?: SearchProfile
   readonly budget?: Partial<OutputBudget>
-  readonly extraDiscoverySources?: number
+  readonly supplementalSearch?: Partial<SearchEnhanceConfig['supplementalSearch']>
   readonly canonicalOutputMaxBytes?: number
   readonly providerMaxSources?: number
   readonly toolTimeoutMs?: number
@@ -75,10 +73,7 @@ function resolveConfig(options: ConfigOptions = {}): SearchEnhanceConfig {
         },
       },
     },
-    extraDiscoverySources: {
-      ...base.extraDiscoverySources,
-      [profile]: options.extraDiscoverySources ?? base.extraDiscoverySources[profile],
-    },
+    supplementalSearch: { ...base.supplementalSearch, ...options.supplementalSearch },
     retention: {
       ...base.retention,
       canonicalOutputMaxBytes: options.canonicalOutputMaxBytes ?? 128 * 1024,
@@ -212,18 +207,12 @@ function input(query = 'ordinary query', signal = new AbortController().signal) 
   return { query, signal }
 }
 
-describe('documentation intent and discovery budget policy', () => {
-  it.each([
-    ['auto', 'ordinary query', true],
-    ['coding_docs', 'ordinary query', true],
-    ['code_examples', 'ordinary query', true],
-    ['project_research', 'ordinary query', true],
-    ['academic', 'ordinary query', false],
-    ['fact_check', 'ordinary query', false],
-    ['academic', 'React SDK migration API', true],
-    ['fact_check', 'GitHub README release changelog', true],
-  ] as const)('resolves docs intent for %s / %s', (profile, query, expected) => {
-    expect(shouldEnhanceDocumentation(profile, query)).toBe(expected)
+describe('explicit supplemental Provider selection', () => {
+  it.each([false, true, undefined])('only warns when native search reporting is explicitly absent (%s)', async reported => {
+    const test = fixture({ main: async () => mainResult('Answer.', [],
+      reported === undefined ? {} : { nativeSearchReported: reported }) })
+    const result = await test.orchestrator.search(input())
+    expect(result.canonical.warnings.some(item => item.code === 'native_search_unconfirmed')).toBe(reported === false)
   })
 
   it('does not probe or call documentation Providers for a non-triggering fixture', async () => {
@@ -236,8 +225,8 @@ describe('documentation intent and discovery budget policy', () => {
     expect(test.exa.search).not.toHaveBeenCalled()
   })
 
-  it('does not probe docs when fallback is disabled', async () => {
-    const config = resolveConfig({ fallbackMode: 'off', profile: 'coding_docs' })
+  it('does not probe Exa unless selected, regardless of docs intent', async () => {
+    const config = resolveConfig({ profile: 'coding_docs' })
     const exa = fakeSourceProvider('exa', 'docs_search', { configured: true })
     const test = fixture({ config, exa })
 
@@ -256,6 +245,7 @@ describe('documentation intent and discovery budget policy', () => {
       config: resolveConfig({
         budget: { maxVisibleSources: 0 },
         profile: 'coding_docs',
+        supplementalSearch: { exa: true, maxSourcesPerProvider: 10 },
         providerMaxSources: 7,
       }),
       exa,
@@ -290,7 +280,7 @@ Sources:
 - [One](https://one.test)
 - [Two](https://two.test)`, { maxSources: 2 })
     const test = fixture({
-      config: resolveConfig({ extraDiscoverySources: 0, providerMaxSources: 2 }),
+      config: resolveConfig({ providerMaxSources: 2 }),
       main: async () => mainResult(parsed.answer, parsed.sources, {
         sourcesTruncated: parsed.sourcesTruncated,
       }),
@@ -311,7 +301,7 @@ Sources:
       search: complete([source('https://docs.test/exa', 'exa')]),
     })
     const test = fixture({
-      config: resolveConfig({ profile: 'coding_docs' }),
+      config: resolveConfig({ profile: 'fact_check', fallbackMode: 'off', supplementalSearch: { exa: true } }),
       exa,
     })
 
@@ -323,23 +313,8 @@ Sources:
     expect(exa.search).toHaveBeenCalledTimes(1)
   })
 
-  it.each([
-    [0, true, true, { firecrawl: 0, tavily: 0 }],
-    [1, true, true, { firecrawl: 0, tavily: 1 }],
-    [2, true, true, { firecrawl: 0, tavily: 2 }],
-    [4, true, true, { firecrawl: 1, tavily: 3 }],
-    [5, true, true, { firecrawl: 2, tavily: 3 }],
-    [5, true, false, { firecrawl: 0, tavily: 5 }],
-    [5, false, true, { firecrawl: 5, tavily: 0 }],
-    [5, false, false, { firecrawl: 0, tavily: 0 }],
-  ] as const)('splits shared budget %i without amplification', (total, hasTavily, hasFirecrawl, expected) => {
-    const allocation = splitDiscoveryBudget(total, hasTavily, hasFirecrawl)
-    expect(allocation).toEqual(expected)
-    expect(allocation.tavily + allocation.firecrawl).toBeLessThanOrEqual(total)
-  })
-
-  it('does not probe discovery Providers at budget zero', async () => {
-    const test = fixture({ config: resolveConfig({ extraDiscoverySources: 0 }) })
+  it('does not probe any unselected supplemental Providers', async () => {
+    const test = fixture({ config: resolveConfig() })
     await test.orchestrator.search(input())
     expect(test.tavily.configured).not.toHaveBeenCalled()
     expect(test.firecrawl.configured).not.toHaveBeenCalled()
@@ -354,23 +329,24 @@ Sources:
       search: complete([source('https://firecrawl.test/result', 'firecrawl')]),
     })
     const test = fixture({
-      config: resolveConfig({ extraDiscoverySources: 5 }),
+      config: resolveConfig({ supplementalSearch: { tavily: true, firecrawl: true } }),
       firecrawl,
       tavily,
     })
 
     const result = await test.orchestrator.search(input())
 
-    expect(result.diagnostics.routing.discoveryAllocation).toEqual({ firecrawl: 5, tavily: 0 })
+    expect(result.diagnostics.routing.supplementalProviders).toEqual(['tavily', 'firecrawl'])
+    expect(result.canonical.warnings).toContainEqual(expect.objectContaining({ code: 'provider_not_configured', provider: 'tavily' }))
     expect(tavily.search).not.toHaveBeenCalled()
     expect(firecrawl.search).toHaveBeenCalledWith(expect.objectContaining({ limit: 5 }))
   })
 
-  it('passes dual-Provider allocations whose total never exceeds the profile budget', async () => {
+  it('gives each selected Provider the same independent limit', async () => {
     const tavily = fakeSourceProvider('tavily', 'web_search', { configured: true })
     const firecrawl = fakeSourceProvider('firecrawl', 'web_search', { configured: true })
     const test = fixture({
-      config: resolveConfig({ extraDiscoverySources: 5 }),
+      config: resolveConfig({ supplementalSearch: { tavily: true, firecrawl: true } }),
       firecrawl,
       tavily,
     })
@@ -379,9 +355,8 @@ Sources:
 
     const tavilyLimit = tavily.search.mock.calls[0]?.[0].limit ?? 0
     const firecrawlLimit = firecrawl.search.mock.calls[0]?.[0].limit ?? 0
-    expect([tavilyLimit, firecrawlLimit]).toEqual([3, 2])
-    expect(tavilyLimit + firecrawlLimit).toBe(5)
-    expect(result.diagnostics.routing.discoveryAllocation).toEqual({ firecrawl: 2, tavily: 3 })
+    expect([tavilyLimit, firecrawlLimit]).toEqual([5, 5])
+    expect(result.diagnostics.routing.supplementalProviders).toEqual(['tavily', 'firecrawl'])
   })
 })
 
@@ -414,7 +389,7 @@ describe('orchestrator settlement, partial success, and diagnostics', () => {
   it('resolves Config once and starts every decided path with the same snapshot', async () => {
     const exa = fakeSourceProvider('exa', 'docs_search', { configured: true })
     const test = fixture({
-      config: resolveConfig({ profile: 'coding_docs' }),
+      config: resolveConfig({ profile: 'coding_docs', supplementalSearch: { exa: true } }),
       exa,
     })
 
@@ -434,7 +409,7 @@ describe('orchestrator settlement, partial success, and diagnostics', () => {
     expect(result.canonical).toMatchObject({ state: 'complete', warnings: [] })
     expect(result.diagnostics.attempts.find(item => item.provider === 'exa')).toMatchObject({
       outcome: 'skipped',
-      skipReason: 'not_configured',
+      skipReason: 'disabled',
     })
   })
   it('keeps the main answer and records a safe warning when a started Provider fails', async () => {
@@ -444,7 +419,7 @@ describe('orchestrator settlement, partial success, and diagnostics', () => {
       search: async () => { throw secretError },
     })
     const test = fixture({
-      config: resolveConfig({ profile: 'coding_docs' }),
+      config: resolveConfig({ supplementalSearch: { exa: true } }),
       exa,
     })
 
@@ -477,7 +452,7 @@ describe('orchestrator settlement, partial success, and diagnostics', () => {
       },
     })
     const test = fixture({
-      config: resolveConfig({ profile: 'coding_docs' }),
+      config: resolveConfig({ supplementalSearch: { exa: true } }),
       exa,
     })
 
@@ -509,7 +484,7 @@ describe('orchestrator settlement, partial success, and diagnostics', () => {
       search: complete([source('https://docs.test/exa', 'exa')]),
     })
     const test = fixture({
-      config: resolveConfig({ profile: 'coding_docs' }),
+      config: resolveConfig({ supplementalSearch: { exa: true } }),
       exa,
       main: async () => { throw mainError },
     })
@@ -523,7 +498,7 @@ describe('orchestrator settlement, partial success, and diagnostics', () => {
     })
     expect(result.diagnostics.attempts.find(item => item.provider === 'exa')).toMatchObject({
       outcome: 'success',
-      participatedInFallback: true,
+      participatedInFallback: false,
     })
     expect(result.canonical.warnings.map(item => item.code)).toEqual([
       'main_search_failed',
@@ -539,6 +514,7 @@ describe('orchestrator settlement, partial success, and diagnostics', () => {
       config: resolveConfig({
         budget: { maxVisibleSources: 0 },
         profile: 'coding_docs',
+        supplementalSearch: { exa: true },
       }),
       exa,
       main: async () => {
@@ -577,7 +553,7 @@ describe('orchestrator settlement, partial success, and diagnostics', () => {
       },
     })
     const test = fixture({
-      config: resolveConfig({ profile: 'coding_docs' }),
+      config: resolveConfig({ supplementalSearch: { exa: true } }),
       exa,
       main: async () => { throw mainError },
     })
@@ -618,7 +594,7 @@ describe('orchestrator settlement, partial success, and diagnostics', () => {
       },
     })
     const test = fixture({
-      config: resolveConfig({ profile: 'coding_docs' }),
+      config: resolveConfig({ supplementalSearch: { exa: true } }),
       exa,
     })
     let settled = false
@@ -655,7 +631,7 @@ describe('orchestrator settlement, partial success, and diagnostics', () => {
       search: input => waitForAbort(input.signal),
     })
     const test = fixture({
-      config: resolveConfig({ profile: 'coding_docs' }),
+      config: resolveConfig({ supplementalSearch: { exa: true } }),
       exa,
       main: input => waitForAbort(input.signal),
     })
@@ -712,7 +688,7 @@ describe('source order, exact deduplication, and independent output limits', () 
     const test = fixture({
       config: resolveConfig({
         budget: { maxVisibleSources: 10 },
-        extraDiscoverySources: 4,
+        supplementalSearch: { exa: true, tavily: true, firecrawl: true, maxSourcesPerProvider: 4 },
         profile: 'coding_docs',
       }),
       exa,
@@ -754,7 +730,7 @@ describe('source order, exact deduplication, and independent output limits', () 
     const test = fixture({
       config: resolveConfig({
         budget: { maxVisibleSources: 10 },
-        extraDiscoverySources: 4,
+        supplementalSearch: { exa: true, tavily: true, firecrawl: true, maxSourcesPerProvider: 4 },
         profile: 'coding_docs',
       }),
       exa,
@@ -831,7 +807,7 @@ describe('source order, exact deduplication, and independent output limits', () 
         maxAnswerCharacters: Array.from(answer).length,
         maxVisibleSources: 10,
       },
-      extraDiscoverySources: 9,
+      supplementalSearch: { tavily: true, firecrawl: true, maxSourcesPerProvider: 9 },
     })
     const query = 'current external pricing evidence'
     const test = fixture({
@@ -912,7 +888,7 @@ describe('source order, exact deduplication, and independent output limits', () 
     )
     const answer = `Use [[1]](${citedUrl}) for the answer.`
     const test = fixture({
-      config: resolveConfig({ budget: { maxVisibleSources: 2 }, extraDiscoverySources: 0 }),
+      config: resolveConfig({ budget: { maxVisibleSources: 2 } }),
       main: async () => mainResult(answer, [highQuality, cited]),
     })
 
@@ -963,7 +939,7 @@ Sources:
 - [Canonical documentation page](https://example.test/path/)
 - [Other page](https://other.example.test/page)`)
     const test = fixture({
-      config: resolveConfig({ budget: { maxVisibleSources: 10 }, extraDiscoverySources: 0 }),
+      config: resolveConfig({ budget: { maxVisibleSources: 10 } }),
       main: async () => mainResult(parsed.answer, parsed.sources),
     })
 
@@ -991,7 +967,6 @@ Sources:
         maxAnswerCharacters: Array.from(visibleAnswer).length,
         maxVisibleSources: 3,
       },
-      extraDiscoverySources: 0,
     })
     const exactTest = fixture({
       config,

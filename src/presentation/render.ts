@@ -70,8 +70,12 @@ function warningText(warning: WebSearchWarning): string {
   switch (warning.code) {
     case 'main_search_failed':
       return `Main search failed; only supplemental discovery sources are available${detail}.`
+    case 'native_search_unconfirmed':
+      return `Native search was enabled, but the API reported no completed search or structured citations; the answer is not confirmed as web-grounded${detail}.`
     case 'provider_failed':
       return `A supplemental Provider failed${detail}.`
+    case 'provider_not_configured':
+      return `A selected supplemental Provider is not configured${detail}.`
     case 'provider_result_truncated':
       return `A Provider bounded its discovery result${detail}.`
     case 'cache_stale':
@@ -120,30 +124,30 @@ function sourceSummary(value: WebSearchOutput): string {
   return `Sources shown: ${value.returned_sources}/${value.total_sources}`
 }
 
-function limitationsSection(value: WebSearchOutput): string | undefined {
-  const lines: string[] = []
+/** Shared model/card notice; Provider failures precede generic truncation information. */
+export function renderWebSearchLimitations(value: WebSearchOutput): string | undefined {
+  const lines = value.warnings.map(warningText)
   if (value.truncated) {
     lines.push('The answer, visible sources, Provider collection, or retained source record was bounded.')
   }
-  for (const warning of value.warnings) lines.push(warningText(warning))
   if (lines.length === 0) return undefined
   return `Limitations\n${lines.map(line => `- ${line}`).join('\n')}`
 }
 
 /**
- * Pure Native projection in the product-defined order. The operation-selected
- * limit is carried in the canonical value, so replay never consults Settings,
- * a cache, the clock, or network state.
+ * Pure Native projection with failure notices ahead of potentially long answers
+ * and source snippets. The canonical byte limit keeps replay independent of
+ * Settings, caches, the clock, or network state.
  */
 export function renderWebSearchText(
   value: WebSearchOutput,
   sourceOperationNotice?: string,
 ): string {
   const sections = [
+    renderWebSearchLimitations(value),
     answerSection(value),
     sourceSection(value),
     sourceSummary(value),
-    limitationsSection(value),
     DISCOVERY_NOTICE,
   ].filter((section): section is string => section !== undefined)
   const complete = sections.join('\n\n')

@@ -21,7 +21,7 @@ const snapshotPath = join(packageRoot, 'tests/snapshots/headless-consumer.json')
 const packageJsonUrl = pathToFileURL(join(packageRoot, 'package.json')).href
 const dshHome = await mkdtemp(join(tmpdir(), 'dsh-search-enhance-headless-'))
 const loaderConfig = join(dshHome, 'cordis.yml')
-const selfLink = join(packageRoot, 'node_modules', '@kkkneko/dsh-search-enhance')
+const selfLink = join(packageRoot, 'node_modules', 'dsh-search-enhance')
 const searchSecret = 'headless-search-secret-value'
 const context7Secret = 'headless-context7-secret-value'
 const exaSecret = 'headless-exa-secret-value'
@@ -231,6 +231,7 @@ async function followup(agent, text) {
 const httpRequests = []
 const sockets = new Set()
 let slowSearchRequests = 0
+const parallelResponses = new Map()
 const server = createServer(async (request, response) => {
   try {
     const body = await requestBody(request)
@@ -251,6 +252,10 @@ const server = createServer(async (request, response) => {
         slowSearchRequests += 1
         response.writeHead(200, { 'content-type': 'application/json' })
         response.write('{"choices":[')
+        return
+      }
+      if (query.startsWith('parallel fixture ')) {
+        parallelResponses.set(query, response)
         return
       }
       if (query.includes('malformed fixture')) {
@@ -360,6 +365,10 @@ const server = createServer(async (request, response) => {
       })
       return
     }
+    if (request.url?.startsWith('/parallel-extract/')) {
+      parallelResponses.set(`${origin}${request.url}`, response)
+      return
+    }
     json(response, 404, { error: 'not found' })
   } catch (error) {
     json(response, 500, { error: error instanceof Error ? error.message : String(error) })
@@ -451,7 +460,7 @@ try {
   config:
     watch: false
 - id: search-enhance
-  name: '@kkkneko/dsh-search-enhance'
+  name: 'dsh-search-enhance'
   config:
     toolDiscovery:
       mode: progressive
@@ -480,8 +489,9 @@ try {
       maxDelayMs: 0
       maxTotalDelayMs: 0
       jitterRatio: 0
-    extraDiscoverySources:
-      auto: 1
+    supplementalSearch:
+      tavily: true
+      maxSourcesPerProvider: 1
     budgets:
       auto:
         compact:
@@ -504,7 +514,7 @@ try {
   ] = await Promise.all([
     import('@deepseek-ai/dsh-app-boot'),
     import(pathToFileURL(fixturePath).href),
-    import('@kkkneko/dsh-search-enhance/source-storage'),
+    import('dsh-search-enhance/source-storage'),
     import(pathToFileURL(webSearchFixturePath).href),
     import(pathToFileURL(webFetchFixturePath).href),
   ])
@@ -521,7 +531,7 @@ try {
     packageJsonUrl,
   )
   await ctx.loader.await()
-  const pluginEntry = [...ctx.loader.entries()].find(entry => entry.options.name === '@kkkneko/dsh-search-enhance')
+  const pluginEntry = [...ctx.loader.entries()].find(entry => entry.options.name === 'dsh-search-enhance')
   assert.ok(pluginEntry?.fiber, 'Loader did not create the search-enhance fiber')
   await pluginEntry.fiber.await()
   assert.deepEqual(ctx.tools.schemas().map(schema => schema.name).sort(), allGlobalToolNames)
@@ -560,6 +570,7 @@ try {
     if (![
       'web_search',
       'docs_search',
+      'web_extract',
       'search_call',
       'search_tools',
       'run_code',
@@ -904,9 +915,9 @@ try {
   assert.equal(diagnosticsResult.result.isError, false)
   assert.equal(
     diagnosticsResult.result.value.provider_attempts.filter(attempt => attempt.attempts > 0).length,
-    5,
+    4,
   )
-  assert.equal(httpRequests.length, requestsBeforeDisclosure + 5)
+  assert.equal(httpRequests.length, requestsBeforeDisclosure + 4)
 
   assert.deepEqual(sorted(pluginNamesFor(isolatedAgent)), expectedCoreTools)
   await followup(isolatedAgent, 'Activate sources and try to read another Session source.')
@@ -949,7 +960,10 @@ try {
 
   const nativeCancelAgent = await createAgent('native-cancel-session')
   const nativeSlowBefore = slowSearchRequests
-  await nativeCancelAgent.followup('Cancel a Native Provider request.')
+  nativeCancelAgent.followup(createUserMessage({
+    content: [{ type: 'text', text: 'Cancel a Native Provider request.' }],
+    source: { kind: 'user' },
+  }))
   await waitFor(() => slowSearchRequests === nativeSlowBefore + 1, 'Native cancellation request')
   nativeCancelAgent.cancel({ kind: 'user' })
   await nativeCancelAgent.whenIdle()
@@ -964,14 +978,17 @@ try {
     agentCtx => { agentCtx.tools.presentAs('ptc') },
   )
   const codeSlowBefore = slowSearchRequests
-  await codeCancelAgent.followup('Cancel a Code Mode nested Provider request.')
+  codeCancelAgent.followup(createUserMessage({
+    content: [{ type: 'text', text: 'Cancel a Code Mode nested Provider request.' }],
+    source: { kind: 'user' },
+  }))
   await waitFor(() => slowSearchRequests === codeSlowBefore + 1, 'Code cancellation request')
   codeCancelAgent.cancel({ kind: 'user' })
   await codeCancelAgent.whenIdle()
   const cancelledDispatch = codeCancelAgent.session.snapshotEvents().find(
-    event => event.type === 'tool/code-dispatch' && event.data.name === 'web_search',
+    event => event.type === 'tool/ptc-dispatch' && event.data.name === 'web_search',
   )
-  assert.ok(cancelledDispatch?.type === 'tool/code-dispatch')
+  assert.ok(cancelledDispatch?.type === 'tool/ptc-dispatch')
   assert.equal(cancelledDispatch.data.isError, true)
   assert.deepEqual(sorted(pluginNamesFor(codeCancelAgent)), expectedCoreTools)
 
@@ -1000,6 +1017,12 @@ try {
     code: 'SOURCE_REF_NOT_FOUND',
   })
   assert.equal(partialResult.result.value.state, 'partial')
+  const partialText = partialResult.result.content[0]?.text ?? ''
+  const failureNotice = 'Main search failed; only supplemental discovery sources are available (search-api/main_search, http).'
+  assert.ok(partialText.startsWith(`Limitations\n- ${failureNotice}\n\n`))
+  assert.ok(partialText.indexOf(failureNotice) < partialText.indexOf('Top sources'))
+  const partialCard = observedCards.find(item => item.callId === 'native-partial-call')?.card
+  assert.ok(partialCard?.answer?.startsWith(`Limitations\n- ${failureNotice}\n\n`))
   assert.equal(emptyResult.result.value.state, 'complete')
   assert.equal('source_ref' in emptyResult.result.value, false)
   assert.equal(emptyResult.result.value.sources.length, 0)
@@ -1121,7 +1144,7 @@ try {
   assert.equal(firstCodeResult.result.value.result.search_call_binding, 'function')
   assert.equal(firstCodeResult.result.value.result.early, 'inactive')
   assert.equal(nextCodeResult.result.value.result.search_call_binding, 'function')
-  const codeDispatches = codeAgent.session.snapshotEvents().filter(event => event.type === 'tool/code-dispatch')
+  const codeDispatches = codeAgent.session.snapshotEvents().filter(event => event.type === 'tool/ptc-dispatch')
   assert.deepEqual(
     codeDispatches.map(event => event.data.name),
     ['web_search', 'search_call', 'web_search', 'search_call'],
@@ -1177,7 +1200,10 @@ try {
   const reloadAgent = await createAgent('reload-cancel-session')
   const oldSourceService = ctx.searchEnhanceSources
   const reloadSlowBefore = slowSearchRequests
-  await reloadAgent.followup('Reload the plugin during an in-flight Provider request.')
+  reloadAgent.followup(createUserMessage({
+    content: [{ type: 'text', text: 'Reload the plugin during an in-flight Provider request.' }],
+    source: { kind: 'user' },
+  }))
   await waitFor(() => slowSearchRequests === reloadSlowBefore + 1, 'reload cancellation request')
   await pluginEntry.fiber.restart()
   await reloadAgent.whenIdle()
@@ -1395,6 +1421,13 @@ try {
   assert.match(codeRequest.system, /search_tools:/)
   assert.match(codeRequest.system, /web_extract:/)
   assert.match(codeRequest.system, /web_fetch:/)
+  for (const request of [nativeFullRequests[0], codeRequest]) {
+    assert.ok(request.system.includes('For webpage bodies (articles, blogs, repository READMEs, and model cards), prefer web_extract with exactly one explicitly selected enabled Provider.'))
+    assert.ok(request.system.includes('Use the host web_fetch, when available, for raw JSON APIs, XML/Atom feeds, or other structured responses.'))
+    assert.ok(request.system.includes('HTTP 200 with only a title or an app shell is not usable page-body evidence'))
+    assert.ok(request.system.includes('Use HTTPS URLs directly when available.'))
+    assert.ok(request.system.includes('Do not bypass URL safety checks.'))
+  }
   for (const operation of deferredOperationNames) {
     assert.doesNotMatch(codeRequest.system, new RegExp(`\\n\\s+${operation}: \\{`, 'u'))
   }
@@ -1580,7 +1613,10 @@ try {
   const beforeLiveEdit = settingsDescriptors()[0]
   await ctx.settings.mutate(
     beforeLiveEdit.ns,
-    [{ op: 'set', path: ['defaultDepth'], value: 'normal' }],
+    [
+      { op: 'set', path: ['defaultDepth'], value: 'normal' },
+      { op: 'set', path: ['retention', 'sourceStoreMaxRecords'], value: 8 },
+    ],
     beforeLiveEdit.revision,
   )
   assert.equal(settingsDescriptors()[0].value.defaultDepth, 'normal')
@@ -1606,6 +1642,87 @@ try {
   await pluginEntry.fiber?.await()
   await runDefaultDepthSearch('restart-scoped-config-after')
   assert.equal(lastSearchMode(), 'normal')
+
+  // Hold both HTTP responses until both siblings arrive: a serial scheduler
+  // cannot pass this barrier. Resolve in reverse order to exercise call identity.
+  for (const name of ['web_search', 'web_extract']) {
+    const parallelAgent = await createAgent(`parallel-${name}-session`)
+    const calls = ['alpha', 'beta'].map(label => ({
+      id: `parallel-${name}-${label}`,
+      name,
+      arguments: name === 'web_search'
+        ? { query: `parallel fixture ${label}`, depth: 'compact' }
+        : { url: `${origin}/parallel-extract/${label}`, provider: 'direct' },
+    }))
+    for (const call of calls) {
+      assert.equal(ctx.tools.executionMode({ ...call, agent: parallelAgent }).kind, 'parallel')
+    }
+    scriptedModule.appendScript(
+      { kind: 'tools', calls },
+      { kind: 'text', text: 'Parallel requests complete.' },
+    )
+    const finished = followup(parallelAgent, `Run two independent ${name} calls.`)
+    try {
+      await waitFor(() => parallelResponses.size === 2, `${name} HTTP overlap`)
+      for (const call of [...calls].reverse()) {
+        const response = parallelResponses.get(call.arguments.query ?? call.arguments.url)
+        if (name === 'web_search') {
+          json(response, 200, { choices: [{ message: {
+            content: `Answer for ${call.id}.\n\nSources:\n- [${call.id}](${origin}/pages/${call.id})`,
+          } }] })
+        } else {
+          response.writeHead(200, { 'content-type': 'text/plain' })
+          response.end(`Extracted body for ${call.id}.`)
+        }
+      }
+      await finished
+      const refs = new Set()
+      for (const call of calls) {
+        const { result } = findResult(call.id, name)
+        assert.equal(result.isError, false)
+        if (name === 'web_search') {
+          refs.add(result.value.source_ref)
+          const stored = ctx.searchEnhanceSources.lookup(parallelAgent.session, result.value.source_ref)
+          assert.equal(stored.state, 'found')
+          assert.equal(stored.record.query, call.arguments.query)
+          assert.equal(stored.record.call.callId, call.id)
+          assert.ok(stored.record.sources.some(source => source.url === `${origin}/pages/${call.id}`))
+          assert.equal(ctx.searchEnhanceSources.lookup(nativeFull.session, result.value.source_ref).state, 'not_found')
+        } else {
+          assert.equal(result.value.requested_url, call.arguments.url)
+          assert.equal(result.value.content, `Extracted body for ${call.id}.`)
+        }
+      }
+      if (name === 'web_search') assert.equal(refs.size, 2)
+    } finally {
+      parallelAgent.cancel({ kind: 'user' })
+      await finished
+      parallelResponses.clear()
+    }
+  }
+  await Promise.all(durabilityChecks)
+  const concurrentCancelAgent = await createAgent('concurrent-cancel-session')
+  const cancelCalls = ['alpha', 'beta'].map(label => ({
+    id: `concurrent-cancel-${label}`,
+    name: 'web_search',
+    arguments: { query: `concurrent cancel fixture ${label}`, depth: 'compact' },
+  }))
+  scriptedModule.appendScript({ kind: 'tools', calls: cancelCalls })
+  const slowBefore = slowSearchRequests
+  const cancelled = followup(concurrentCancelAgent, 'Cancel both overlapping searches.')
+  try {
+    await waitFor(() => slowSearchRequests === slowBefore + 2, 'concurrent cancellation requests')
+  } finally {
+    concurrentCancelAgent.cancel({ kind: 'user' })
+    await cancelled
+  }
+  for (const call of cancelCalls) {
+    const { result } = findResult(call.id, call.name)
+    assert.equal(result.isError, true)
+    assert.equal(result.error?.info?.code ?? result.error?.code, 'ABORTED')
+    assert.equal(result.value?.source_ref, undefined)
+  }
+  assert.equal(Object.keys(JSON.parse(await readFile(storageFile, 'utf8')).tables.records).length, 8)
 
   const agentFirst = await createAgent('agent-first-dispose-session')
   const agentFirstHandle = handles.pop()

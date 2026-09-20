@@ -201,7 +201,7 @@ export function foldToolDisclosureEvent(
     return addActiveGroups(state, pending.groups, pendingNativeCalls)
   }
 
-  if (event.type === 'tool/code-dispatch') {
+  if (event.type === 'tool/ptc-dispatch') {
     if (event.data.isError !== false) return state
     const selected = activation(event.data.name, event.data.arguments)
     const sourceProduced = options.sourceProduced

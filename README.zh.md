@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-`@kkkneko/dsh-search-enhance` 是 DeepSeek Harness 的搜索增强插件。它使用 Grok-compatible Search API 生成普通网页搜索的主要回答，并可选用 Context7、Exa、Tavily 和 Firecrawl 完成文档检索、补充来源、网页正文提取和站点页面发现。
+`dsh-search-enhance` 是 DeepSeek Harness 的搜索增强插件。它使用 Grok-compatible Search API 生成普通网页搜索的主要回答，并可选用 Context7、Exa、Tavily 和 Firecrawl 完成文档检索、补充来源、网页正文提取和站点页面发现。
 
 插件将搜索、来源保留和页面读取作为不同步骤处理。`web_search` 和 `docs_search` 返回搜索回答或文档片段以及可见来源；完整来源记录可通过 `source_ref` 保存并继续分页读取；需要核对重要内容时，再由 `web_extract` 获取选中页面。因此，搜索 snippet 与实际读取的网页正文会保持明确区分。
 
@@ -12,14 +12,14 @@
 
 ## 主要特点
 
-- `web_search` 使用 Grok-compatible 端点生成主要回答，对文档型问题补充 Exa 来源，并在配置的补充预算内使用 Tavily 或 Firecrawl。
+- `web_search` 使用 Grok-compatible 端点生成主要回答，并行调用用户勾选的全部补充搜索 Provider（Exa、Tavily、Firecrawl），每家使用独立的来源数量上限。
 - 来源在展示前会经过 URL 标准化、去重，并根据来源类别、目标版本和发布时间信号重新排序。
 - `source_ref` 将完整来源记录保存在插件私有持久存储中，Agent 可以继续分页读取首次结果未展示的来源。
 - `docs_search` 只在提供明确 `library_name` 或 `library_id` 时使用 Context7；没有库身份的请求使用 Exa 发现。
-- `web_extract` 按 Tavily → Firecrawl → `smart_direct` → `direct` 的固定路径执行，并报告提取路径、证据等级和可用的页面元数据。
+- `web_extract` 每次必须通过 `provider` 指定一家用户已启用的服务：`tavily_extract`、`firecrawl_scrape`、`smart_direct` 或 `direct`。结果报告提取路径、证据等级和页面元数据，失败不自动换服务。
 - 来源分页、Context7 精细操作、站点映射、研究计划和诊断通过 `search_tools` 与 `search_call` 按需披露。
 - Native Tool Mode 与 Code Mode 使用相同的固定工具入口和规范输出。DSH Settings、Credentials、Agent Preset、guard 和生命周期清理继续生效。
-- 未配置的可选 Provider 会被跳过。Tavily 和 Firecrawl 的补充搜索预算默认是 `0`，可选 Provider 失败也会在结果中显示。
+- 补充搜索默认不选择任何 Provider。未选中的服务不会被请求；选中服务缺少凭据或执行失败会在结果中显示警告。
 
 完整的路由、证据处理和渐进披露流程见[搜索链路架构](https://github.com/umineko987/dsh-search-enhance/blob/main/guides/search-workflow.zh.md)。
 
@@ -27,14 +27,14 @@
 
 ### 1. 安装
 
-需要 DSH `^0.1.2-rc.1`，不再支持更早的 DSH 版本。
+仅支持 DSH `0.1.5-rc.2`。DSH 依赖精确锁定到该版本，不兼容旧版或其他预发行版。
 
-如果从旧的无 scope 包 `dsh-search-enhance` 迁移，请先运行 `dsh plugin --profile web remove dsh-search-enhance`。
+如果从带 scope 的包 `@kkkneko/dsh-search-enhance` 迁移，请先运行 `dsh plugin --profile web remove @kkkneko/dsh-search-enhance`，避免同时加载两份插件。
 
-将已发布的 bundle 安装到 DSH `web` profile：
+将 [npm 上发布的 bundle](https://www.npmjs.com/package/dsh-search-enhance) 安装到 DSH `web` profile：
 
 ```bash
-dsh plugin --profile web add @kkkneko/dsh-search-enhance@latest
+dsh plugin --profile web add dsh-search-enhance@latest
 ```
 
 ### 2. 启动 DSH Web
@@ -51,14 +51,20 @@ dsh web
 设置 → 插件 → 插件配置 → dsh-search-enhance
 ```
 
-在 **Grok 搜索后端** 中配置：
+在设置卡片中配置：
 
-1. xAI 端点或明确的 Grok-compatible 网关；
-2. 与服务匹配的 `completions` 或 `responses` 协议；
-3. 该端点支持的模型；
-4. 设置卡片“凭据”区域中的 Grok 密钥。
+1. 在 **凭据 → Grok 搜索** 中填写 xAI 端点或明确的 Grok-compatible 网关及密钥；
+2. 在 **Grok 搜索后端** 中选择匹配的 `completions` 或 `responses` 协议及模型；
+3. 用 **补充搜索服务** 和 **可用网页提取服务** 的下拉框多选需要的服务。其他服务的接口地址、超时和凭据引用也位于各自的凭据卡片中。
 
 默认凭据引用名是 `SEARCH_API_KEY`。密钥值通过 DSH Credentials 保存，不会暴露为模型参数。
+
+官方 Grok 端点会自动启用原生搜索，无需新增协议或开关：
+- 版本路径可省略：`https://api.x.ai` / `https://us.api.x.ai` 自动补 `/v1`；`https://openrouter.ai` 自动补 `/api/v1`，填到 `/api` 时补 `/v1`。搜索与模型列表请求都会补全，不重复追加完整路径，也不改写自定义中转地址。
+- **xAI**：`https://api.x.ai/v1`（也支持 `https://us.api.x.ai/v1`），模型如 `grok-4.6`。自动使用 Responses 并发送 `web_search` + `x_search`，即使设置选择了 `completions`；不改写已保存的设置。
+- **OpenRouter**：`https://openrouter.ai/api/v1`，模型如 `x-ai/grok-4.6`。保留所选协议，发送 `openrouter:web_search`、`engine: native`，无需 `:online` 后缀。OpenRouter 的模型能力和工作区策略仍可能影响实际搜索引擎；严格禁止其回退时，在工作区仅允许 `native`。
+- 只匹配上述官方 HTTPS 域名及 Grok 模型；其他模型、中转端点保持原行为。官方适配中 `minimal` 映射为 `low`、`max` 映射为 `xhigh`，`off` 仍表示省略思考参数。
+- 结构化引用会进入来源列表。若 API 未报告完成的搜索、结构化引用或搜索用量，结果会明确提示原生搜索未确认；正文链接本身不作为执行证明。
 
 保存设置并重启 DSH，然后询问一个需要当前信息的问题。成功时会看到 `Search` 工具行、回答和来源链接。
 
@@ -84,7 +90,11 @@ dsh web
 | Tavily | 补充搜索、网页提取和站点映射 | `TAVILY_API_KEY` | 否 |
 | Firecrawl | 补充搜索和网页提取 | `FIRECRAWL_API_KEY` | 否 |
 
-未配置的可选 Provider 会被跳过。所有搜索 profile 的 Tavily/Firecrawl 补充搜索预算默认都是 `0`；显式的 `web_extract` 和 `web_map` 请求使用各自的执行路径。
+在插件设置中，可以多选 **补充搜索 Provider**。选中项与主搜索并行执行，每家使用 `supplementalSearch.maxSourcesPerProvider` 限制来源数量（默认 `5`，最大 `100`）。选择对所有搜索 profile 生效，不再隐式启用 Exa，也不再按 60/40 分摊共享预算。
+
+另外，多选 **网页提取 Provider** 可以限制 Agent 可用的服务范围。每次 `web_extract` 必须明确选择一家已启用服务，例如 `{ "url": "https://example.com/", "provider": "direct", "format": "markdown" }`。服务被禁用、缺少凭据、不支持格式或执行失败时，直接报告错误，不自动回退。提取服务默认全部启用，可取消勾选不希望使用的服务。
+
+**配置变更：** 原 `extraDiscoverySources` 按 profile 设置的预算改为 `supplementalSearch` 选择项。需要明确启用 `exa`、`tavily` 和/或 `firecrawl`；已有 API 凭据本身不会开启补充搜索。现有提取服务的 `enabled` 开关继续作为可用名单。保存设置后重启 DSH。`fallbackMode` 现在仅影响保持原样的文档搜索路由。
 
 对于 `docs_search`，Context7 需要明确的 `library_name` 或 `library_id`。两者都未提供时，`provider: "auto"` 使用 Exa，不会根据完整问题猜测包名。
 
@@ -101,7 +111,7 @@ dsh web
 更新时重新运行上面的安装命令。卸载插件：
 
 ```bash
-dsh plugin --profile web remove @kkkneko/dsh-search-enhance
+dsh plugin --profile web remove dsh-search-enhance
 ```
 
 更新或卸载 bundle 后请重启 DSH。

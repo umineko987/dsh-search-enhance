@@ -6,7 +6,7 @@ import {
   Config,
   DEFAULT_CREDENTIAL_REFS,
   DEFAULT_SEARCH_BUDGETS,
-  EXTRA_DISCOVERY_SOURCES_MAX,
+  SUPPLEMENTAL_SEARCH_MAX_SOURCES,
   SEARCH_ENHANCE_SETTINGS_NAMESPACE,
   WEB_EXTRACT_PROXY_URL_MAX_CHARACTERS,
 } from '../src/config.js'
@@ -32,18 +32,13 @@ describe('stage 0 configuration contract', () => {
       timeoutMs: 120_000,
     })
     expect(config.budgets).toEqual(DEFAULT_SEARCH_BUDGETS)
-    expect(config.extraDiscoverySources).toEqual({
-      academic: 0,
-      auto: 0,
-      code_examples: 0,
-      coding_docs: 0,
-      fact_check: 0,
-      project_research: 0,
-    })
-    expect(resolveConfig({ extraDiscoverySources: { auto: 1 } }).extraDiscoverySources.auto).toBe(1)
+    expect(config.supplementalSearch).toEqual({ exa: false, tavily: false, firecrawl: false, maxSourcesPerProvider: 5 })
+    expect(resolveConfig({ supplementalSearch: { exa: true, tavily: true } }).supplementalSearch)
+      .toMatchObject({ exa: true, tavily: true, firecrawl: false })
     expect(() => resolveConfig({
-      extraDiscoverySources: { auto: EXTRA_DISCOVERY_SOURCES_MAX + 1 },
+      supplementalSearch: { maxSourcesPerProvider: SUPPLEMENTAL_SEARCH_MAX_SOURCES + 1 },
     })).toThrow()
+    expect(() => resolveConfig({ supplementalSearch: { exa: 'yes' } })).toThrow()
     expect(config.retry).toEqual({
       baseDelayMs: 1000,
       jitterRatio: 0.2,

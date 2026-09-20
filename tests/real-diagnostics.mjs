@@ -32,7 +32,7 @@ const config = Config({
     model: process.env.SEARCH_MODEL?.trim() || 'configured-for-diagnostics',
     timeoutMs: 30_000,
   },
-  extraDiscoverySources: { auto: 1 },
+  supplementalSearch: { tavily: true, firecrawl: true, maxSourcesPerProvider: 1 },
   retry: {
     maxAttempts: 1,
     baseDelayMs: 0,

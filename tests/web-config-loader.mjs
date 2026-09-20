@@ -11,7 +11,7 @@ const dshHome = await mkdtemp(join(tmpdir(), 'dsh-search-enhance-web-loader-'))
 const loaderConfig = join(dshHome, 'cordis.yml')
 const settingsFile = join(dshHome, 'settings.yaml')
 const exampleConfig = join(packageRoot, 'examples/headless/cordis.yml')
-const selfLink = join(packageRoot, 'node_modules', '@kkkneko/dsh-search-enhance')
+const selfLink = join(packageRoot, 'node_modules', 'dsh-search-enhance')
 const credentialNames = [
   'SEARCH_API_KEY',
   'CONTEXT7_API_KEY',
@@ -72,15 +72,16 @@ async function loadWithOfficialClientModuleSystem(row, origin) {
       '@deepseek-ai/dsh-client-ui-primitives': {
         Button: () => null,
         StateDot: () => null,
+        Menu: () => null,
       },
     },
     async loadBundle(url) {
       const response = await fetch(`${origin}${url}`)
       assert.equal(response.status, 200)
-      vm.runInContext(await response.text(), context, { filename: '@kkkneko/dsh-search-enhance/client.js' })
+      vm.runInContext(await response.text(), context, { filename: 'dsh-search-enhance/client.js' })
     },
   })
-  return modules.import('@kkkneko/dsh-search-enhance')
+  return modules.import('dsh-search-enhance')
 }
 
 process.env.DSH_HOME = dshHome
@@ -98,7 +99,7 @@ try {
 
   const source = await readFile(exampleConfig, 'utf8')
   const configured = source.replace(
-    "- id: search-enhance\n  name: '@kkkneko/dsh-search-enhance'",
+    "- id: search-enhance\n  name: 'dsh-search-enhance'",
     `- id: webserver
   name: '@deepseek-ai/dsh-host-webserver'
   config:
@@ -107,7 +108,7 @@ try {
 - id: client-modules
   name: '@deepseek-ai/dsh-client-modules'
 - id: search-enhance
-  name: '@kkkneko/dsh-search-enhance'`,
+  name: 'dsh-search-enhance'`,
   )
   await writeFile(loaderConfig, configured)
   await symlink(join(packageRoot, 'node_modules'), join(dshHome, 'node_modules'), 'junction')
@@ -131,7 +132,7 @@ try {
   )
   await ctx.loader.await()
 
-  const pluginEntry = [...ctx.loader.entries()].find(entry => entry.options.name === '@kkkneko/dsh-search-enhance')
+  const pluginEntry = [...ctx.loader.entries()].find(entry => entry.options.name === 'dsh-search-enhance')
   assert.ok(pluginEntry?.fiber, 'Loader did not create the Search Enhance fiber')
   await pluginEntry.fiber.await()
   assert.equal(ctx.get('webServer') !== undefined, true)
@@ -147,10 +148,10 @@ try {
   assert.equal(firstSnapshot.applies, 'restart')
 
   await waitFor(
-    () => ctx.clientModules.graph().entries.some(entry => entry.id === '@kkkneko/dsh-search-enhance'),
+    () => ctx.clientModules.graph().entries.some(entry => entry.id === 'dsh-search-enhance'),
     'client module registry did not discover dsh-search-enhance',
   )
-  const rows = ctx.clientModules.graph().entries.filter(entry => entry.id === '@kkkneko/dsh-search-enhance')
+  const rows = ctx.clientModules.graph().entries.filter(entry => entry.id === 'dsh-search-enhance')
   assert.equal(rows.length, 1)
   const row = rows[0]
   assert.deepEqual(row.inject, [
@@ -158,13 +159,13 @@ try {
     '@deepseek-ai/dsh-client-ui-renderer',
     '@deepseek-ai/dsh-client-ui-settings-plugins',
   ])
-  assert.equal(ctx.clientModules.clientPath('@kkkneko/dsh-search-enhance'), join(packageRoot, 'client/client.js'))
+  assert.equal(ctx.clientModules.clientPath('dsh-search-enhance'), join(packageRoot, 'client/client.js'))
 
   const served = await fetch(`${origin}${row.url}`)
   assert.equal(served.status, 200)
   assert.match(served.headers.get('content-type') ?? '', /^text\/javascript/u)
   const servedSource = await served.text()
-  assert.match(servedSource, /^window\.__ModuleLoader__\.load\(\{\s*id: "@kkkneko\/dsh-search-enhance"/u)
+  assert.match(servedSource, /^window\.__ModuleLoader__\.load\(\{\s*id: "dsh-search-enhance"/u)
   const sourceMapPath = /\/\/# sourceMappingURL=(.+)/u.exec(servedSource)?.[1]
   assert.ok(sourceMapPath)
   const sourceMap = await fetch(new URL(sourceMapPath, new URL(row.url, origin)))
@@ -197,7 +198,7 @@ try {
   assert.equal(restarted.status, 200)
   assert.equal((await restarted.json()).value.searchApi.baseUrl, 'https://grok-gateway.example/v1')
   assert.equal(
-    ctx.clientModules.graph().entries.filter(entry => entry.id === '@kkkneko/dsh-search-enhance').length,
+    ctx.clientModules.graph().entries.filter(entry => entry.id === 'dsh-search-enhance').length,
     1,
     'restart duplicated the client graph row',
   )
@@ -205,7 +206,7 @@ try {
   await pluginEntry.fiber.dispose()
   assert.equal((await fetch(`${origin}/dsh-search-enhance/config`)).status, 404)
   await waitFor(
-    () => !ctx.clientModules.graph().entries.some(entry => entry.id === '@kkkneko/dsh-search-enhance'),
+    () => !ctx.clientModules.graph().entries.some(entry => entry.id === 'dsh-search-enhance'),
     'client graph row survived plugin disposal',
   )
   assert.equal((await fetch(`${origin}${row.url}`)).status, 404)

@@ -127,13 +127,13 @@ export async function inspectDiagnosticStatus(
   const exaCredential = stateFor(states, config.providers.exa.credentialRef)
   const tavilyCredential = stateFor(states, config.providers.tavily.credentialRef)
   const firecrawlCredential = stateFor(states, config.providers.firecrawl.credentialRef)
-  const discoveryEnabled = Object.values(config.extraDiscoverySources).some(value => value > 0)
   const standard = config.minimumProfile === 'standard'
 
   const mainProviders = Object.freeze([
     freezeProviderStatus('search_api', searchCredential.state),
-    freezeProviderStatus('tavily_search', routeState(discoveryEnabled, tavilyCredential)),
-    freezeProviderStatus('firecrawl_search', routeState(discoveryEnabled, firecrawlCredential)),
+    freezeProviderStatus('exa', routeState(config.supplementalSearch.exa, exaCredential)),
+    freezeProviderStatus('tavily_search', routeState(config.supplementalSearch.tavily, tavilyCredential)),
+    freezeProviderStatus('firecrawl_search', routeState(config.supplementalSearch.firecrawl, firecrawlCredential)),
   ])
   const docsProviders = Object.freeze([
     freezeProviderStatus('context7', optionalAuthState(context7Credential)),
@@ -202,8 +202,8 @@ export async function inspectDiagnosticStatus(
     webMapEnabled: true,
     researchPlanEnabled: true,
     diagnosticsEnabled: true,
-    tavilySearchEnabled: discoveryEnabled,
-    firecrawlSearchEnabled: discoveryEnabled,
+    tavilySearchEnabled: config.supplementalSearch.tavily,
+    firecrawlSearchEnabled: config.supplementalSearch.firecrawl,
     tavilyExtractEnabled: config.webExtract.tavily.enabled,
     firecrawlScrapeEnabled: config.webExtract.firecrawl.enabled,
     smartDirectEnabled: config.webExtract.smartDirect.enabled,

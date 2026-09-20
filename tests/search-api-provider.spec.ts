@@ -186,6 +186,47 @@ Sources:
     expect(JSON.stringify(operationSession.snapshotEvents())).not.toContain('secret-a')
   })
 
+  it.each([
+    ['https://api.x.ai/v1', 'grok-4.6', 'completions'],
+    ['https://openrouter.ai/api/v1', 'x-ai/grok-4.6', 'completions'],
+    ['https://openrouter.ai/api/v1', 'x-ai/grok-4.6', 'responses'],
+  ] as const)('dispatches native search to %s with %s/%s', async (baseUrl, model, protocol) => {
+    const config = resolveConfig({ searchApi: { baseUrl, model, protocol, thinkingLevel: 'max' } })
+    const effectiveProtocol = baseUrl.includes('api.x.ai') ? 'responses' : protocol
+    const fixture = providerFixture({ config, fetch: vi.fn(async (input, init) => {
+      if (String(input).endsWith('/models')) return jsonResponse({ data: [{ id: model }] })
+      const request = JSON.parse(String(init?.body))
+      expect(request.model).toBe(model)
+      expect(request.tools).toEqual(baseUrl.includes('api.x.ai')
+        ? [{ type: 'web_search' }, { type: 'x_search' }]
+        : [{ type: 'openrouter:web_search', parameters: { engine: 'native' } }])
+      expect(request.reasoning).toEqual({ effort: 'xhigh' })
+      const citation = { type: 'url_citation', url: 'https://primary.test/page', title: 'Primary' }
+      return jsonResponse(effectiveProtocol === 'responses'
+        ? { output: [{ type: 'message', content: [{ type: 'output_text', text: 'Answer.', annotations: [citation] }] }] }
+        : { choices: [{ message: { content: 'Answer.', annotations: [citation] } }] })
+    }) as typeof fetch })
+    const result = await fixture.provider.search({ query: 'Find primary sources', signal: signal() })
+    expect(result).toMatchObject({
+      endpoint: `${baseUrl}/${effectiveProtocol === 'responses' ? 'responses' : 'chat/completions'}`,
+      protocol: effectiveProtocol,
+      nativeSearchReported: true,
+      modelValidation: 'validated',
+      sources: [{ provider: 'search-api', url: 'https://primary.test/page', title: 'Primary' }],
+    })
+    expect(config.searchApi.protocol).toBe(protocol)
+  })
+
+  it('marks a native-enabled answer without reported search as unconfirmed', async () => {
+    const fixture = providerFixture({
+      config: resolveConfig({ searchApi: { baseUrl: 'https://api.x.ai/v1', model: 'grok-4.6' } }),
+      fetch: vi.fn(async input => String(input).endsWith('/models')
+        ? jsonResponse({}) : jsonResponse({ output_text: 'A model answer with [a link](https://example.test).' })) as typeof fetch,
+    })
+    expect(await fixture.provider.search({ query: 'Find sources', signal: signal() }))
+      .toMatchObject({ nativeSearchReported: false })
+  })
+
   it('uses the Provider collection cap while preserving answer-cited sources', async () => {
     const config = resolveConfig({
       retention: {

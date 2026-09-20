@@ -18,7 +18,11 @@ import { resolveSearchStrategy } from '../src/search/index.js'
 
 const resolveConfig = (input: unknown) => Config(input as never)
 
-function prepare(protocol: SearchApiProtocol, thinkingLevel: ThinkingLevel) {
+function prepare(
+  protocol: SearchApiProtocol,
+  thinkingLevel: ThinkingLevel,
+  overrides: Record<string, unknown> = {},
+) {
   const config = resolveConfig({
     searchApi: {
       baseUrl: 'https://search.example.test/v1/',
@@ -26,6 +30,7 @@ function prepare(protocol: SearchApiProtocol, thinkingLevel: ThinkingLevel) {
       model: 'search-model',
       protocol,
       thinkingLevel,
+      ...overrides,
     },
   })
   return buildSearchApiRequest({
@@ -119,6 +124,94 @@ describe('credential-free Search API request construction', () => {
       + 'latest release',
     )
     expect(request.serializedBody).toBe(JSON.stringify(request.body))
+  })
+
+  it.each(SEARCH_API_PROTOCOLS)('enables xAI native tools via Responses even when %s is selected', (protocol) => {
+    const request = prepare(protocol, 'high', {
+      baseUrl: 'https://api.x.ai/chat/completions/',
+      model: 'grok-4.6',
+    })
+    expect(request).toMatchObject({
+      endpoint: 'https://api.x.ai/v1/responses',
+      protocol: 'responses',
+      nativeSearch: 'xai',
+      body: {
+        model: 'grok-4.6',
+        reasoning: { effort: 'high' },
+        tools: [{ type: 'web_search' }, { type: 'x_search' }],
+        store: false,
+        stream: true,
+      },
+    })
+    expect(request.body).not.toHaveProperty('messages')
+    expect(Object.isFrozen((request.body as { tools: unknown[] }).tools)).toBe(true)
+  })
+
+  it.each(SEARCH_API_PROTOCOLS)('enables OpenRouter native tools while retaining %s', (protocol) => {
+    const request = prepare(protocol, 'max', {
+      baseUrl: 'https://openrouter.ai',
+      model: 'x-ai/grok-4.6',
+    })
+    expect(request.protocol).toBe(protocol)
+    expect(request.endpoint).toBe(`https://openrouter.ai/api/v1/${protocol === 'responses' ? 'responses' : 'chat/completions'}`)
+    expect(request.body).toMatchObject({
+      model: 'x-ai/grok-4.6',
+      reasoning: { effort: 'xhigh' },
+      tools: [{ type: 'openrouter:web_search', parameters: { engine: 'native' } }],
+    })
+    expect(request.body).not.toHaveProperty('reasoning_effort')
+    expect(request.body).not.toHaveProperty('plugins')
+  })
+
+  it('supports the official regional endpoint and maps minimal reasoning without changing off', () => {
+    const overrides = { baseUrl: 'https://us.api.x.ai/v1', model: 'grok-4.6' }
+    expect(prepare('completions', 'minimal', overrides).body).toHaveProperty('reasoning.effort', 'low')
+    expect(prepare('responses', 'off', overrides).body).not.toHaveProperty('reasoning')
+  })
+
+  it.each([
+    ['https://openrouter.ai.evil.test/api/v1', 'x-ai/grok-4.6'],
+    ['https://api.x.ai.evil.test/v1', 'grok-4.6'],
+    ['https://proxy.test/api.x.ai/v1', 'grok-4.6'],
+    ['https://openrouter.ai:8443/api/v1', 'x-ai/grok-4.6'],
+    ['http://api.x.ai/v1', 'grok-4.6'],
+    ['https://openrouter.ai/api/v1', 'openai/gpt-5.2'],
+    ['https://api.x.ai/v1', 'another-model'],
+  ])('leaves other origins or models unchanged: %s %s', (baseUrl, model) => {
+    const request = prepare('completions', 'max', { baseUrl, model })
+    expect(request.protocol).toBe('completions')
+    expect(request).not.toHaveProperty('nativeSearch')
+    expect(request.body).not.toHaveProperty('tools')
+    expect(request.body).toHaveProperty('reasoning_effort', 'max')
+  })
+
+  it.each([
+    ['https://api.x.ai', 'https://api.x.ai/v1'],
+    ['https://us.api.x.ai/', 'https://us.api.x.ai/v1'],
+    ['https://openrouter.ai', 'https://openrouter.ai/api/v1'],
+    ['https://openrouter.ai/api/', 'https://openrouter.ai/api/v1'],
+    ['https://api.x.ai/v1/responses/', 'https://api.x.ai/v1'],
+    ['https://openrouter.ai/api/v1/chat/completions/', 'https://openrouter.ai/api/v1'],
+  ])('completes official API paths once for search and model discovery: %s', (baseUrl, expectedBase) => {
+    for (const protocol of SEARCH_API_PROTOCOLS) {
+      const endpoint = searchApiEndpoint(baseUrl, protocol)
+      expect(endpoint).toBe(`${expectedBase}/${protocol === 'responses' ? 'responses' : 'chat/completions'}`)
+      expect(searchApiEndpoint(endpoint, protocol)).toBe(endpoint)
+      expect(searchApiModelsEndpoint(endpoint)).toBe(`${expectedBase}/models`)
+    }
+    expect(searchApiModelsEndpoint(baseUrl)).toBe(`${expectedBase}/models`)
+  })
+
+  it.each([
+    'https://proxy.test',
+    'https://api.x.ai.evil.test',
+    'https://openrouter.ai:8443',
+    'http://api.x.ai',
+    'https://api.x.ai/custom/v2',
+    'https://openrouter.ai/api/v2',
+  ])('preserves other origins and explicit versioned/custom paths: %s', baseUrl => {
+    expect(searchApiEndpoint(baseUrl, 'responses')).toBe(`${baseUrl}/responses`)
+    expect(searchApiModelsEndpoint(baseUrl)).toBe(`${baseUrl}/models`)
   })
 
   it('normalizes terminal paths and preserves the configured Grok model id', () => {

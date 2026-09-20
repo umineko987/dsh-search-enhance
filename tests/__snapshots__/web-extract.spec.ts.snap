@@ -23,15 +23,6 @@ exports[`web_extract internal contract and fixed orchestrator > pins route and e
   {
     "attempts": [
       {
-        "attempts": 0,
-        "capability": "web_extract",
-        "durationMs": 0,
-        "outcome": "skipped",
-        "participatedInFallback": false,
-        "provider": "tavily_extract",
-        "skipReason": "not_configured",
-      },
-      {
         "attempts": 1,
         "capability": "web_extract",
         "durationMs": 0,
@@ -50,24 +41,6 @@ exports[`web_extract internal contract and fixed orchestrator > pins route and e
   {
     "attempts": [
       {
-        "attempts": 0,
-        "capability": "web_extract",
-        "durationMs": 0,
-        "outcome": "skipped",
-        "participatedInFallback": false,
-        "provider": "tavily_extract",
-        "skipReason": "not_configured",
-      },
-      {
-        "attempts": 0,
-        "capability": "web_extract",
-        "durationMs": 0,
-        "outcome": "skipped",
-        "participatedInFallback": false,
-        "provider": "firecrawl_scrape",
-        "skipReason": "not_configured",
-      },
-      {
         "attempts": 1,
         "capability": "web_extract",
         "durationMs": 0,
@@ -85,33 +58,6 @@ exports[`web_extract internal contract and fixed orchestrator > pins route and e
   },
   {
     "attempts": [
-      {
-        "attempts": 0,
-        "capability": "web_extract",
-        "durationMs": 0,
-        "outcome": "skipped",
-        "participatedInFallback": false,
-        "provider": "tavily_extract",
-        "skipReason": "not_configured",
-      },
-      {
-        "attempts": 0,
-        "capability": "web_extract",
-        "durationMs": 0,
-        "outcome": "skipped",
-        "participatedInFallback": false,
-        "provider": "firecrawl_scrape",
-        "skipReason": "not_configured",
-      },
-      {
-        "attempts": 0,
-        "capability": "web_extract",
-        "durationMs": 0,
-        "outcome": "skipped",
-        "participatedInFallback": false,
-        "provider": "smart_direct",
-        "skipReason": "not_configured",
-      },
       {
         "attempts": 1,
         "capability": "web_extract",

@@ -16,7 +16,7 @@ const offHome = await mkdtemp(join(tmpdir(), 'dsh-search-enhance-map-off-'))
 const onHome = await mkdtemp(join(tmpdir(), 'dsh-search-enhance-map-on-'))
 const offConfigPath = join(offHome, 'cordis.yml')
 const onConfigPath = join(onHome, 'cordis.yml')
-const selfLink = join(packageRoot, 'node_modules', '@kkkneko/dsh-search-enhance')
+const selfLink = join(packageRoot, 'node_modules', 'dsh-search-enhance')
 const tavilySecret = 'web-map-loader-tavily-secret'
 const globalDefinitions = [
   'docs_search',
@@ -147,7 +147,7 @@ function loaderCore(home) {
 function progressiveConfig(home) {
   return `${loaderCore(home)}
 - id: search-enhance
-  name: '@kkkneko/dsh-search-enhance'
+  name: 'dsh-search-enhance'
 `
 }
 
@@ -169,7 +169,7 @@ function allModeConfig(home) {
   config:
     agents: []
 - id: search-enhance
-  name: '@kkkneko/dsh-search-enhance'
+  name: 'dsh-search-enhance'
   config:
     toolDiscovery:
       mode: all
@@ -243,7 +243,7 @@ function mapTranscript(session, callId) {
 
 function codeDispatches(session) {
   return session.snapshotEvents().flatMap(event => {
-    if (event.type !== 'tool/code-dispatch-start' && event.type !== 'tool/code-dispatch') return []
+    if (event.type !== 'tool/ptc-dispatch-start' && event.type !== 'tool/ptc-dispatch') return []
     return [normalize({ type: event.type, data: event.data })]
   })
 }
@@ -296,7 +296,7 @@ try {
   const [{ boot }, scriptedModule, configModule] = await Promise.all([
     import('@deepseek-ai/dsh-app-boot'),
     import(pathToFileURL(fixturePath).href),
-    import('@kkkneko/dsh-search-enhance/config'),
+    import('dsh-search-enhance/config'),
   ])
 
   process.env.DSH_HOME = offHome
@@ -308,7 +308,7 @@ try {
     packageJsonUrl,
   )
   await offCtx.loader.await()
-  const offEntry = [...offCtx.loader.entries()].find(entry => entry.options.name === '@kkkneko/dsh-search-enhance')
+  const offEntry = [...offCtx.loader.entries()].find(entry => entry.options.name === 'dsh-search-enhance')
   assert.ok(offEntry?.fiber)
   await offEntry.fiber.await()
   const progressiveGlobalSchemas = schemaNames(offCtx)
@@ -367,7 +367,7 @@ try {
     packageJsonUrl,
   )
   await onCtx.loader.await()
-  const pluginEntry = [...onCtx.loader.entries()].find(entry => entry.options.name === '@kkkneko/dsh-search-enhance')
+  const pluginEntry = [...onCtx.loader.entries()].find(entry => entry.options.name === 'dsh-search-enhance')
   assert.ok(pluginEntry?.fiber)
   await pluginEntry.fiber.await()
 
@@ -515,8 +515,8 @@ try {
   assert.doesNotMatch(modelRequests[2].system, /\n\s+web_map: \{/u)
   const dispatchEvents = codeDispatches(codeAgent.session)
   assert.deepEqual(dispatchEvents.map(event => event.type), [
-    'tool/code-dispatch-start',
-    'tool/code-dispatch',
+    'tool/ptc-dispatch-start',
+    'tool/ptc-dispatch',
   ])
   assert.equal(dispatchEvents[1].data.name, 'search_call')
   assert.equal('meta' in dispatchEvents[1].data, false)

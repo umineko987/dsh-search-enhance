@@ -280,7 +280,7 @@ describe('progressive capability definitions and folding', () => {
     ]).activeGroups).toEqual([])
 
     const codeEvent: SessionEvent = {
-      type: 'tool/code-dispatch',
+      type: 'tool/ptc-dispatch',
       seq: SessionSeq(1),
       time: 1,
       data: {

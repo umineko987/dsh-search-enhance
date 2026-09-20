@@ -527,6 +527,7 @@ describe('DirectFetchProvider redirects, formats, and adapter integration', () =
       now: () => 100,
     })
     const result = await orchestrator.extract({
+      provider: 'direct',
       format: 'markdown',
       signal: new AbortController().signal,
       url: `${fixture.origin}/snapshot`,
@@ -561,6 +562,7 @@ describe('DirectFetchProvider redirects, formats, and adapter integration', () =
     })
 
     const result = await orchestrator.extract({
+      provider: 'direct',
       format: 'text',
       signal: new AbortController().signal,
       url: `${fixture.origin}/fallback`,
@@ -574,9 +576,6 @@ describe('DirectFetchProvider redirects, formats, and adapter integration', () =
       statusCode: 200,
     })
     expect(result.attempts.map(attempt => [attempt.provider, attempt.outcome])).toEqual([
-      ['tavily_extract', 'skipped'],
-      ['firecrawl_scrape', 'failed'],
-      ['smart_direct', 'failed'],
       ['direct', 'success'],
     ])
   })
@@ -599,6 +598,7 @@ describe('DirectFetchProvider redirects, formats, and adapter integration', () =
       now: () => 100,
     })
     const operation = orchestrator.extract({
+      provider: 'direct',
       format: 'text',
       signal: new AbortController().signal,
       url: `${fixture.origin}/failure?secret=query-secret`,
@@ -610,9 +610,6 @@ describe('DirectFetchProvider redirects, formats, and adapter integration', () =
     } catch (error) {
       const failure = error as WebExtractInfrastructureError
       expect(failure.routeStatuses.map(status => status.provider)).toEqual([
-        'tavily_extract',
-        'firecrawl_scrape',
-        'smart_direct',
         'direct',
       ])
       expect(failure.routeStatuses.at(-1)).toMatchObject({
@@ -645,6 +642,7 @@ describe('DirectFetchProvider redirects, formats, and adapter integration', () =
     })
 
     const result = await orchestrator.extract({
+      provider: 'tavily_extract',
       format: 'markdown',
       signal: new AbortController().signal,
       url: 'https://example.test/not-dispatched',
