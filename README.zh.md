@@ -29,8 +29,6 @@
 
 仅支持 DSH `0.1.5-rc.2`。DSH 依赖精确锁定到该版本，不兼容旧版或其他预发行版。
 
-如果从带 scope 的包 `@kkkneko/dsh-search-enhance` 迁移，请先运行 `dsh plugin --profile web remove @kkkneko/dsh-search-enhance`，避免同时加载两份插件。
-
 将 [npm 上发布的 bundle](https://www.npmjs.com/package/dsh-search-enhance) 安装到 DSH `web` profile：
 
 ```bash

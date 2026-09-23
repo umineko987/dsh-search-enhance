@@ -29,8 +29,6 @@ For the complete routing, evidence, and progressive-disclosure flow, see [Search
 
 Supports only DSH `0.1.5-rc.2`. DSH dependencies are pinned to this exact release; older versions and other prereleases are not supported.
 
-If migrating from the scoped `@kkkneko/dsh-search-enhance` package, first run `dsh plugin --profile web remove @kkkneko/dsh-search-enhance` to avoid loading both bundles.
-
 Install the [published npm bundle](https://www.npmjs.com/package/dsh-search-enhance) into the DSH `web` profile:
 
 ```bash

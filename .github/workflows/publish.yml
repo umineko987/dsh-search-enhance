@@ -1,0 +1,29 @@
+name: Publish to npm
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Update npm for trusted publishing
+        run: npm install -g npm@11.5.1
+      - name: Check tag matches package version
+        run: |
+          node -e 'const tag = process.env.GITHUB_REF_NAME; const { version } = require("./package.json"); if (!/^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(tag) || tag !== `v${version}`) { console.error(`Tag must be a stable version matching package.json (v${version})`); process.exit(1); }'
+      - name: Install dependencies and build
+        run: npm ci
+      - name: Publish
+        run: npm publish --ignore-scripts
