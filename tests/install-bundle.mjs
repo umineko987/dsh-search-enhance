@@ -169,7 +169,7 @@ const dshVersion = await run('dsh', ['--version'], {
   env: process.env,
   label: 'dsh --version',
 })
-assert.equal(dshVersion.stdout.trim(), '0.1.5-rc.2', 'install acceptance requires DSH 0.1.5-rc.2')
+assert.equal(dshVersion.stdout.trim(), '0.1.5-rc.3', 'install acceptance requires DSH 0.1.5-rc.3')
 
 const dshHome = await mkdtemp(join(tmpdir(), 'dsh-search-enhance-install-'))
 const profileDir = join(dshHome, 'profiles', profileName)

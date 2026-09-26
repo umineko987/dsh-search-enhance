@@ -33,7 +33,7 @@ function snapshotRequest(options) {
   return JSON.parse(JSON.stringify({
     provider: options.provider,
     model: options.model,
-    // AgentLoop puts the effective prompt in system-role history in DSH 0.1.5-rc.2.
+    // AgentLoop puts the effective prompt in system-role history in DSH 0.1.5-rc.3.
     system: options.messages.findLast(message => message.role === 'system')?.content
       .filter(block => block.type === 'text').map(block => block.text).join('\n') ?? '',
     tools: options.tools,

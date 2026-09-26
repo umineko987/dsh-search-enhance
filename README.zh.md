@@ -27,7 +27,7 @@
 
 ### 1. 安装
 
-仅支持 DSH `0.1.5-rc.2`。DSH 依赖精确锁定到该版本，不兼容旧版或其他预发行版。
+仅支持 DSH `0.1.5-rc.3`。DSH 依赖精确锁定到该版本，不兼容旧版或其他预发行版。
 
 将 [npm 上发布的 bundle](https://www.npmjs.com/package/dsh-search-enhance) 安装到 DSH `web` profile：
 

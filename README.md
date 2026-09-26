@@ -27,7 +27,7 @@ For the complete routing, evidence, and progressive-disclosure flow, see [Search
 
 ### 1. Install
 
-Supports only DSH `0.1.5-rc.2`. DSH dependencies are pinned to this exact release; older versions and other prereleases are not supported.
+Supports only DSH `0.1.5-rc.3`. DSH dependencies are pinned to this exact release; older versions and other prereleases are not supported.
 
 Install the [published npm bundle](https://www.npmjs.com/package/dsh-search-enhance) into the DSH `web` profile:
 

@@ -20,7 +20,7 @@ import {
 } from '../src/web-config/contracts.js'
 
 // DSH supplies these atoms in the browser; its Node barrel also imports
-// unrelated Markdown dependencies that 0.1.5-rc.2 does not ship for Node consumers.
+// unrelated Markdown dependencies that 0.1.5-rc.3 does not ship for Node consumers.
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
   Button: ({ variant, size, icon, children, ...props }: ComponentProps<typeof import('@deepseek-ai/dsh-client-ui-primitives').Button>) => (
     <button {...props}>{icon}{children}</button>
