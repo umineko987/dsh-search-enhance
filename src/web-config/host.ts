@@ -1,6 +1,6 @@
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
-import type { SettingsDescriptor, SettingsPathOp } from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-config-editor'
 import Schema from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 
@@ -9,7 +9,6 @@ import {
   SUPPLEMENTAL_SEARCH_MAX_SOURCES,
   SEARCH_API_PROTOCOLS,
   SEARCH_DEPTHS,
-  SEARCH_ENHANCE_SETTINGS_NAMESPACE,
   SEARCH_PROFILES,
   THINKING_LEVELS,
   TOOL_DISCOVERY_MODES,
@@ -67,12 +66,6 @@ class BridgeHttpError extends Error {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function settingsConflictActual(error: unknown): number | undefined {
-  if (!isRecord(error) || error['code'] !== 'SETTINGS_CONFLICT') return undefined
-  const actual = error['actual']
-  return Number.isSafeInteger(actual) && (actual as number) >= 0 ? actual as number : undefined
 }
 
 function own(record: Record<string, unknown>, key: string): boolean {
@@ -238,17 +231,33 @@ async function describeCredential(
   }
 }
 
-function findDescriptor(ctx: Context): SettingsDescriptor {
-  const descriptor = ctx.settings.describe({ redactSecrets: true }).find(
-    candidate => String(candidate.ns) === String(SEARCH_ENHANCE_SETTINGS_NAMESPACE),
-  )
-  if (descriptor === undefined) {
+const revisions = new Map<string, { fingerprint: string; revision: number }>()
+
+function profileConfig(ctx: Context) {
+  const row = ctx.configEditor.configuration().find(({ entry }) => entry.options.name === 'dsh-search-enhance')
+  if (row?.entry.fiber === undefined) {
     throw new BridgeHttpError(503, 'settings-unavailable', 'Search Enhance settings are not available.')
   }
-  if (descriptor.applies !== 'restart') {
-    throw new BridgeHttpError(500, 'settings-contract-error', 'Search Enhance settings have an invalid apply mode.')
+  const { entry, inherited, override } = row
+  const config = row.entry.fiber.config as SearchEnhanceConfigValue
+  const key = `${ctx.configEditor.documentPath}:${entry.options.id}`
+  const fingerprint = JSON.stringify([entry.options.config, inherited, override])
+  const previous = revisions.get(key)
+  const revision = previous === undefined ? 0 : previous.revision + Number(previous.fingerprint !== fingerprint)
+  revisions.set(key, { fingerprint, revision })
+  return { entry, inherited, override, revision, config }
+}
+
+/** Only editable overrides differing from the inherited profile are shown as user changes. */
+function userLayer(override: Record<string, unknown>, inherited: WebEditableConfig): WebConfigLayer | undefined {
+  const projected: Record<string, unknown> = {}
+  for (const path of WEB_EDITABLE_PATHS) {
+    const candidate = readPath(override, path)
+    if (candidate.present && candidate.value !== readPath(inherited, path).value) {
+      writePath(projected, path, candidate.value)
+    }
   }
-  return descriptor
+  return projectLayer(projected)
 }
 
 export async function readWebConfigSnapshot(
@@ -256,23 +265,22 @@ export async function readWebConfigSnapshot(
   signal: AbortSignal,
 ): Promise<WebConfigSnapshot> {
   throwIfAborted(signal)
-  const descriptor = findDescriptor(ctx)
-  const config = SearchEnhanceConfig(descriptor.value as never)
+  const { config, inherited, override, revision } = profileConfig(ctx)
   const credentialEntries = await Promise.all(WEB_CREDENTIAL_SLOTS.map(async slot => [
     slot,
     await describeCredential(ctx, config, slot, signal),
   ] as const))
   const diagnostics = await inspectDiagnosticStatus(ctx.credentials, config, signal)
   throwIfAborted(signal)
-  const base = projectLayer(descriptor.base)
-  const user = projectLayer(descriptor.user)
+  const base = projectConfig(SearchEnhanceConfig(inherited as never))
+  const user = userLayer(override, base)
   return {
     namespace: 'search-enhance',
-    revision: descriptor.revision,
-    applies: 'restart',
-    writable: ctx.settings.writable,
+    revision,
+    applies: 'live',
+    writable: true,
     value: projectConfig(config),
-    ...(base === undefined ? {} : { base }),
+    base,
     ...(user === undefined ? {} : { user }),
     options: {
       profiles: [...SEARCH_PROFILES],
@@ -555,39 +563,36 @@ function authorize(request: IncomingMessage, requireOrigin: boolean): void {
   }
 }
 
-function settingsOps(mutations: readonly WebSettingsMutation[]): SettingsPathOp[] {
-  return mutations.map(mutation => mutation.op === 'set'
-    ? { op: 'set', path: mutation.path, value: mutation.value }
-    : { op: 'unset', path: mutation.path })
-}
-
-async function mutateSettings(
-  ctx: Context,
-  request: WebSettingsMutationRequest,
-): Promise<void> {
-  if (!ctx.settings.writable) {
-    throw new BridgeHttpError(409, 'settings-read-only', 'The Settings document is read-only.')
-  }
+async function mutateSettings(ctx: Context, request: WebSettingsMutationRequest): Promise<void> {
+  const { entry } = profileConfig(ctx)
   try {
-    await ctx.settings.mutate(
-      SEARCH_ENHANCE_SETTINGS_NAMESPACE,
-      settingsOps(request.mutations),
-      request.expectedRevision,
-    )
+    await ctx.configEditor.edit(entry, (current, inherited) => {
+      const actual = profileConfig(ctx).revision
+      if (actual !== request.expectedRevision) {
+        throw new BridgeHttpError(409, 'settings-conflict', 'The configuration changed after this form was loaded.', actual)
+      }
+      const next = structuredClone(current)
+      for (const mutation of request.mutations) {
+        if (mutation.op === 'set') {
+          writePath(next, mutation.path, mutation.value)
+        } else {
+          const base = readPath(inherited, mutation.path)
+          if (base.present) {
+            writePath(next, mutation.path, base.value)
+          } else {
+            const parent = readPath(next, mutation.path.slice(0, -1)).value
+            if (isRecord(parent)) delete parent[mutation.path.at(-1)!]
+          }
+        }
+      }
+      return next
+    })
   } catch (error) {
-    const conflictActual = settingsConflictActual(error)
-    if (conflictActual !== undefined) {
-      throw new BridgeHttpError(
-        409,
-        'settings-conflict',
-        'The Settings document changed after this form was loaded.',
-        conflictActual,
-      )
-    }
+    if (error instanceof BridgeHttpError) throw error
     if (Schema.ValidationError.is(error)) {
       throw new BridgeHttpError(422, 'settings-rejected', 'The configuration was rejected by the plugin schema.')
     }
-    throw new BridgeHttpError(500, 'settings-write-failed', 'The Settings document could not be updated.')
+    throw new BridgeHttpError(500, 'settings-write-failed', 'The configuration could not be updated.')
   }
 }
 
@@ -596,6 +601,7 @@ async function handleConfigRoute(
   request: IncomingMessage,
   response: ServerResponse,
   signal: AbortSignal,
+  detach: () => void,
 ): Promise<void> {
   if (request.method === 'GET') {
     authorize(request, false)
@@ -611,21 +617,16 @@ async function handleConfigRoute(
   }
   authorize(request, true)
   const mutation = parseMutation(await readJsonBody(request, signal))
-  if (mutation.mutations.length > 0) await mutateSettings(ctx, mutation)
+  if (mutation.mutations.length > 0) {
+    // A config edit reloads this plugin; its disposer must not await the edit's own HTTP request.
+    detach()
+    await mutateSettings(ctx, mutation)
+  }
   sendJson(response, 200, await readWebConfigSnapshot(ctx, signal))
 }
 
-async function currentConfig(ctx: Context): Promise<SearchEnhanceConfigValue> {
-  const current = ctx.settings.get(SEARCH_ENHANCE_SETTINGS_NAMESPACE) as SearchEnhanceConfigValue | undefined
-  if (current === undefined) {
-    throw new BridgeHttpError(503, 'settings-unavailable', 'Search Enhance settings are not available.')
-  }
-  // The configuration surface reads Settings live on purpose: it must write a
-  // credential to the reference the user just saved, while the search plane keeps
-  // using the restart-scoped value its plugin instance loaded.
-  // Settings owns schema validation and returns a deeply frozen resolved snapshot.
-  // Re-running Schemastery here mutates optional fields and fails on that snapshot.
-  return current
+function currentConfig(ctx: Context): SearchEnhanceConfigValue {
+  return profileConfig(ctx).config
 }
 
 async function handleCredentialRoute(
@@ -675,14 +676,14 @@ interface ActiveRequest {
 
 function routeHandler(
   active: Set<ActiveRequest>,
-  handler: (request: IncomingMessage, response: ServerResponse, signal: AbortSignal) => Promise<void>,
+  handler: (request: IncomingMessage, response: ServerResponse, signal: AbortSignal, detach: () => void) => Promise<void>,
 ) {
   return (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     const controller = new AbortController()
     const record: ActiveRequest = { controller, task: Promise.resolve() }
     const abort = () => controller.abort(new DOMException('Client disconnected.', 'AbortError'))
     request.once('aborted', abort)
-    const task = handler(request, response, controller.signal).catch(error => {
+    const task = handler(request, response, controller.signal, () => active.delete(record)).catch(error => {
       if (controller.signal.aborted) {
         response.destroy()
         return
@@ -714,15 +715,15 @@ export function mountWebConfigBridge(ctx: Context): () => Promise<void> {
     webServer.register({
       kind: 'exact',
       path: WEB_CONFIG_PATH,
-      handler: routeHandler(active, (request, response, signal) => (
-        handleConfigRoute(ctx, request, response, signal)
+      handler: routeHandler(active, (request, response, signal, detach) => (
+        handleConfigRoute(ctx.root, request, response, signal, detach)
       )),
     }),
     webServer.register({
       kind: 'exact',
       path: WEB_CREDENTIALS_PATH,
       handler: routeHandler(active, (request, response, signal) => (
-        handleCredentialRoute(ctx, request, response, signal)
+        handleCredentialRoute(ctx.root, request, response, signal)
       )),
     }),
   ]

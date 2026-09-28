@@ -46,7 +46,7 @@ function parseSnapshot(value: unknown): WebConfigSnapshot {
   if (
     !isRecord(value)
     || value['namespace'] !== 'search-enhance'
-    || value['applies'] !== 'restart'
+    || value['applies'] !== 'live'
     || !Number.isSafeInteger(value['revision'])
     || typeof value['writable'] !== 'boolean'
     || !isRecord(value['value'])

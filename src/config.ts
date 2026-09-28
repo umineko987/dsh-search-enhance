@@ -349,7 +349,7 @@ export interface Config {
   readonly supplementalSearch: SupplementalSearchConfig
   readonly retention: RetentionConfig
   readonly cache: CacheConfig
-  /** Deployment-level Agent tool-discovery policy; Settings changes apply on restart. */
+  /** Agent tool-discovery policy; changes take effect after the automatic plugin reload. */
   readonly toolDiscovery: ToolDiscoveryConfig
   /** @deprecated Accepted and validated for compatibility, but ignored. */
   readonly optionalTools: OptionalToolsConfig
@@ -668,5 +668,5 @@ export const Config: Schema<Config> = Schema.object({
   }),
 }) as Schema<Config>
 
-/** DSH Settings uses the same schema as Loader config; the user layer overrides the Loader base. */
+/** Preserve the exported alias; DSH forms now derive fields directly from Loader Config. */
 export const SettingsSchema = Config

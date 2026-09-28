@@ -529,7 +529,7 @@ export const CONTEXT7_GET_CACHED_DOC_RAW_OUTPUT_SCHEMA = {
 } as const satisfies ValueSchemaSpec
 
 export interface Context7ToolsDependencies {
-  /** Read the restart-scoped resolved Settings value this plugin instance was loaded with. */
+  /** Read the active plugin instance's resolved configuration. */
   readonly getConfig: () => Config
   readonly documentation: Pick<
     DocumentationSearchService,

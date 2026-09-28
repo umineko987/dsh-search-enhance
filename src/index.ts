@@ -7,11 +7,7 @@ import {
   SourceSearchDiagnosticProbe,
 } from './diagnostics/index.js'
 
-import {
-  Config as SearchEnhanceConfig,
-  SEARCH_ENHANCE_SETTINGS_NAMESPACE,
-  type Config as SearchEnhanceConfigValue,
-} from './config.js'
+import { type Config as SearchEnhanceConfigValue, Config as SearchEnhanceConfig } from './config.js'
 import {
   Context7CachedOperations,
   DocumentationSearchService,
@@ -57,15 +53,11 @@ import { WebExtractOrchestrator } from './web-extract/orchestrator.js'
 import { installWebConfigBridge } from './web-config/host.js'
 
 export const name = 'search-enhance'
-export const inject = ['agents', 'credentials', 'settings', 'storageDomain', 'systemPrompt', 'tools']
+export const inject = ['agents', 'configEditor', 'credentials', 'storageDomain', 'systemPrompt', 'tools']
 export const Config = SearchEnhanceConfig
 
 export async function apply(ctx: Context, config: SearchEnhanceConfigValue): Promise<void> {
-  const effective = ctx.settings.register(
-    SEARCH_ENHANCE_SETTINGS_NAMESPACE,
-    SearchEnhanceConfig,
-    { applies: 'restart', base: config },
-  ).get()
+  const effective = config
   const domain = await ctx.storageDomain.open(SOURCE_RECORD_DOMAIN_SPEC)
   const store = new SourceRecordStore(domain.table(SOURCE_RECORD_TABLE_NAME), {
     maxBytes: effective.retention.sourceEventMaxBytes,
@@ -77,9 +69,8 @@ export async function apply(ctx: Context, config: SearchEnhanceConfigValue): Pro
   })
 
   const operations = new ForegroundOperationScope()
-  // This namespace applies on restart, so every consumer reads the one value
-  // resolved here. Reading Settings live would make some fields take effect
-  // immediately while constructor-bound limits waited for a restart.
+  // ConfigEditor reconciles edits by rebuilding this plugin in-process; a saved
+  // configuration is active as soon as the edit request completes.
   const getConfig = (): SearchEnhanceConfigValue => effective
   const providerDependencies = { credentials: ctx.credentials }
   const context7Cache = new PersistentContext7Cache(ctx.storageDomain, {

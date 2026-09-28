@@ -3,6 +3,7 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 
@@ -35,10 +36,10 @@ export function apply(ctx: ClientContext): void {
     () => ctx.locale.register(SEARCH_ENHANCE_LOCALE_NAMESPACE, { zh, en }),
     'dsh-search-enhance: settings dictionaries',
   )
-  ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({
-    name: 'settings.plugin.item',
-    // Keyed slots dispatch by the Host settings namespace, not the package name.
-    key: 'search-enhance',
+  ctx.slots.inject('settings.plugins.tab', () => ctx.slots.register({
+    name: 'settings.plugins.tab',
+    id: 'search-enhance',
+    label: () => ctx.locale.bind(SEARCH_ENHANCE_LOCALE_NAMESPACE)('title'),
     locale: SEARCH_ENHANCE_LOCALE_NAMESPACE,
   }, SearchEnhancePluginCard))
 }

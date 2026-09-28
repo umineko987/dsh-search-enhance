@@ -8,14 +8,12 @@ import {
   type ResolvedCredential,
 } from '@deepseek-ai/dsh-credentials'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
-import SettingsProvider, {
-  type SettingsNamespace,
-} from '@deepseek-ai/dsh-settings'
-
+import { Service } from '@deepseek-ai/cordis'
+import type { ConfigEditor } from '@deepseek-ai/dsh-config-editor'
+import type { Entry } from '@deepseek-ai/cordis-plugin-loader'
 import {
   Config,
   SUPPLEMENTAL_SEARCH_MAX_SOURCES,
-  SEARCH_ENHANCE_SETTINGS_NAMESPACE,
   SEARCH_PROFILES,
   WEB_EXTRACT_PROXY_URL_MAX_CHARACTERS,
   type Config as SearchEnhanceConfig,
@@ -33,28 +31,56 @@ import {
   type WebConfigSnapshot,
 } from '../src/web-config/contracts.js'
 
-interface MemorySettingsConfig {
+interface MemoryEditorConfig {
   document: Record<string, unknown>
+  base: SearchEnhanceConfig
 }
 
-class MemorySettings extends SettingsProvider {
-  readonly writable = true
+function merge(base: Record<string, unknown>, override: Record<string, unknown>): Record<string, unknown> {
+  const result = structuredClone(base)
+  for (const [key, value] of Object.entries(override)) {
+    result[key] = value !== null && typeof value === 'object' && !Array.isArray(value)
+      ? merge((result[key] ?? {}) as Record<string, unknown>, value as Record<string, unknown>)
+      : value
+  }
+  return result
+}
+
+let editorId = 0
+class MemoryConfigEditor extends Service {
   private stored: Record<string, unknown>
+  private base: SearchEnhanceConfig
+  private entry: Entry
+  readonly documentPath = `/tmp/search-enhance-test-${++editorId}/patch.yml`
   failPersistMessage: string | undefined
 
-  constructor(ctx: Context, config: MemorySettingsConfig) {
-    super(ctx)
-    this.stored = structuredClone(config.document)
+  constructor(ctx: Context, { document, base }: MemoryEditorConfig) {
+    super(ctx, 'configEditor')
+    this.stored = structuredClone(document)
+    this.base = base
+    const config = merge(base as unknown as Record<string, unknown>, document['search-enhance'] as Record<string, unknown>)
+    this.entry = {
+      options: { id: 'search-enhance', name: 'dsh-search-enhance', config },
+      fiber: { config: Config(structuredClone(config) as never) },
+    } as unknown as Entry
   }
 
-  protected load(): Promise<Record<string, unknown>> {
-    return Promise.resolve(structuredClone(this.stored))
+  configuration(): ReturnType<ConfigEditor['configuration']> {
+    return [{
+      entry: this.entry,
+      inherited: structuredClone(this.base) as unknown as Record<string, unknown>,
+      override: structuredClone(this.stored['search-enhance']) as Record<string, unknown>,
+    }]
   }
 
-  protected persist(ns: SettingsNamespace, section: Record<string, unknown>): Promise<void> {
+  async edit(entry: Entry, change: (current: Record<string, unknown>, inherited: Record<string, unknown>) => Record<string, unknown>): Promise<void> {
+    if (entry !== this.entry) throw new Error('Entry changed')
+    const next = change(structuredClone(entry.options.config ?? {}), structuredClone(this.base) as unknown as Record<string, unknown>)
+    const resolved = Config(structuredClone(next) as never)
     if (this.failPersistMessage !== undefined) throw new Error(this.failPersistMessage)
-    this.stored[String(ns)] = structuredClone(section)
-    return Promise.resolve()
+    this.stored['search-enhance'] = structuredClone(next)
+    this.entry.options.config = next
+    ;(this.entry.fiber as { config: SearchEnhanceConfig }).config = resolved
   }
 
   snapshotDocument(): Record<string, unknown> {
@@ -123,7 +149,7 @@ interface Harness {
   ctx: Context
   origin: string
   owner: Awaited<ReturnType<Context['plugin']>>
-  settings: MemorySettings
+  editor: MemoryConfigEditor
   credentials: MemoryCredentials
   base: SearchEnhanceConfig
 }
@@ -160,24 +186,17 @@ const initialDocument = (): Record<string, unknown> => ({
   },
 })
 
-function ownerPlugin(base: SearchEnhanceConfig) {
+function ownerPlugin() {
   return {
     name: 'search-enhance-web-config-fixture',
-    inject: ['settings', 'credentials'],
-    apply(ctx: Context) {
-      ctx.settings.register(SEARCH_ENHANCE_SETTINGS_NAMESPACE, Config, {
-        applies: 'restart',
-        base,
-      })
-      installWebConfigBridge(ctx)
-    },
+    inject: ['configEditor', 'credentials'],
+    apply(ctx: Context) { installWebConfigBridge(ctx) },
   }
 }
 
 async function createHarness(document = initialDocument()): Promise<Harness> {
   const ctx = new Context()
   contexts.add(ctx)
-  await ctx.plugin(MemorySettings, { document })
   await ctx.plugin(MemoryCredentials, { values: { TEST_GROK_SEARCH_KEY: 'fixture-secret-value' } })
   await ctx.plugin(WebServer, { host: '127.0.0.1', port: 0 })
   const base = Config({
@@ -187,7 +206,8 @@ async function createHarness(document = initialDocument()): Promise<Harness> {
       model: 'base-model',
     },
   } as never)
-  const owner = await ctx.plugin(ownerPlugin(base))
+  await ctx.plugin(MemoryConfigEditor, { document, base })
+  const owner = await ctx.plugin(ownerPlugin())
   const origin = `http://127.0.0.1:${String(ctx.webServer.port)}`
   await vi.waitFor(async () => {
     const response = await fetch(`${origin}${WEB_CONFIG_PATH}`)
@@ -197,7 +217,7 @@ async function createHarness(document = initialDocument()): Promise<Harness> {
     ctx,
     origin,
     owner,
-    settings: ctx.settings as unknown as MemorySettings,
+    editor: ctx.configEditor as unknown as MemoryConfigEditor,
     credentials: ctx.credentials as unknown as MemoryCredentials,
     base,
   }
@@ -238,7 +258,7 @@ describe('Search Enhance Web configuration Host bridge', () => {
     expect(response.status).toBe(200)
     expect(response.headers.get('cache-control')).toBe('no-store')
     expect(snapshot.revision).toBe(0)
-    expect(snapshot.applies).toBe('restart')
+    expect(snapshot.applies).toBe('live')
     expect(snapshot.value.searchApi).toMatchObject({
       baseUrl: 'https://grok-gateway.example/v1',
       protocol: 'completions',
@@ -305,19 +325,21 @@ describe('Search Enhance Web configuration Host bridge', () => {
       mutations: [{ op: 'set', path: ['searchApi', 'model'], value: 'grok-third-party-next' }],
     })
     const snapshot = await response.json() as WebConfigSnapshot
-    const stored = harness.settings.snapshotDocument()
+    const stored = harness.editor.snapshotDocument()
     const search = stored['search-enhance'] as Record<string, unknown>
 
     expect(response.status).toBe(200)
     expect(snapshot.revision).toBe(1)
     expect(snapshot.value.searchApi.baseUrl).toBe('https://grok-gateway.example/v1')
     expect(snapshot.value.searchApi.model).toBe('grok-third-party-next')
+    expect(snapshot.user?.searchApi?.thinkingLevel).toBeUndefined()
+    expect(snapshot.user?.providers?.exa?.timeoutMs).toBe(90_000)
     expect(search['futureField']).toEqual({ keep: true })
-    expect(search['providers']).toEqual({
+    expect(search['providers']).toMatchObject({
       context7: { baseUrl: 'https://context7.example/v1' },
       exa: { timeoutMs: 90_000 },
     })
-    expect(search['webExtract']).toEqual({
+    expect(search['webExtract']).toMatchObject({
       smartDirect: { proxyUrl: 'http://127.0.0.1:7890' },
       direct: { proxyUrl: 'http://127.0.0.1:7890' },
     })
@@ -328,7 +350,7 @@ describe('Search Enhance Web configuration Host bridge', () => {
 
     const noOp = await mutate(harness, { expectedRevision: 1, mutations: [] })
     expect((await noOp.json() as WebConfigSnapshot).revision).toBe(1)
-    expect(harness.settings.snapshotDocument()).toEqual(stored)
+    expect(harness.editor.snapshotDocument()).toEqual(stored)
   })
 
   it('sets and clears the two optional extraction proxies without rewriting other settings', async () => {
@@ -341,7 +363,7 @@ describe('Search Enhance Web configuration Host bridge', () => {
       ],
     })
     const snapshot = await updated.json() as WebConfigSnapshot
-    const stored = harness.settings.snapshotDocument()
+    const stored = harness.editor.snapshotDocument()
     const search = stored['search-enhance'] as Record<string, unknown>
     const webExtract = search['webExtract'] as Record<string, Record<string, unknown>>
 
@@ -360,7 +382,7 @@ describe('Search Enhance Web configuration Host bridge', () => {
       model: 'must-not-change',
     })
 
-    const beforeInvalid = harness.settings.snapshotDocument()
+    const beforeInvalid = harness.editor.snapshotDocument()
     const invalid = await mutate(harness, {
       expectedRevision: 1,
       mutations: [{
@@ -371,16 +393,13 @@ describe('Search Enhance Web configuration Host bridge', () => {
     })
     expect(invalid.status).toBe(422)
     expect((await json(invalid)).error).toMatchObject({ code: 'settings-rejected' })
-    expect(harness.settings.snapshotDocument()).toEqual(beforeInvalid)
+    expect(harness.editor.snapshotDocument()).toEqual(beforeInvalid)
   })
 
   it('maps revision conflicts, schema rejection, invalid paths, and infrastructure failures safely', async () => {
     const harness = await createHarness()
-    await harness.ctx.settings.mutate(
-      SEARCH_ENHANCE_SETTINGS_NAMESPACE,
-      [{ op: 'set', path: ['defaultDepth'], value: 'normal' }],
-      0,
-    )
+    const row = harness.editor.configuration()[0]!
+    await harness.editor.edit(row.entry, current => ({ ...current, defaultDepth: 'normal' }))
 
     const conflict = await mutate(harness, {
       expectedRevision: 0,
@@ -390,28 +409,10 @@ describe('Search Enhance Web configuration Host bridge', () => {
     expect(await json(conflict)).toEqual({
       error: {
         code: 'settings-conflict',
-        message: 'The Settings document changed after this form was loaded.',
+        message: 'The configuration changed after this form was loaded.',
         actualRevision: 1,
       },
     })
-
-    const crossModuleConflict = vi.spyOn(harness.ctx.settings, 'mutate').mockRejectedValueOnce({
-      code: 'SETTINGS_CONFLICT',
-      actual: 7,
-    })
-    const stableCodeConflict = await mutate(harness, {
-      expectedRevision: 1,
-      mutations: [{ op: 'set', path: ['searchApi', 'model'], value: 'cross-module-write' }],
-    })
-    expect(stableCodeConflict.status).toBe(409)
-    expect(await json(stableCodeConflict)).toEqual({
-      error: {
-        code: 'settings-conflict',
-        message: 'The Settings document changed after this form was loaded.',
-        actualRevision: 7,
-      },
-    })
-    crossModuleConflict.mockRestore()
 
     const rejected = await mutate(harness, {
       expectedRevision: 1,
@@ -427,7 +428,7 @@ describe('Search Enhance Web configuration Host bridge', () => {
     expect(invalidPath.status).toBe(400)
     expect((await json(invalidPath)).error).toMatchObject({ code: 'invalid-mutation-path' })
 
-    harness.settings.failPersistMessage = 'do-not-leak-this-storage-detail'
+    harness.editor.failPersistMessage = 'do-not-leak-this-storage-detail'
     const failed = await mutate(harness, {
       expectedRevision: 1,
       mutations: [{ op: 'set', path: ['searchApi', 'model'], value: 'will-fail' }],
@@ -523,7 +524,7 @@ describe('Search Enhance Web configuration Host bridge', () => {
     })
     expect(rejected.status).toBe(422)
     expect((await json(rejected)).error).toMatchObject({ code: 'configuration-too-large' })
-    expect(harness.settings.snapshotDocument()).toMatchObject({
+    expect(harness.editor.snapshotDocument()).toMatchObject({
       'search-enhance': { searchApi: { model: exactModel } },
     })
   })
@@ -593,7 +594,7 @@ describe('Search Enhance Web configuration Host bridge', () => {
     partial.destroy()
 
     expect((await fetch(`${harness.origin}${WEB_CONFIG_PATH}`)).status).toBe(404)
-    const remounted = await harness.ctx.plugin(ownerPlugin(harness.base))
+    const remounted = await harness.ctx.plugin(ownerPlugin())
     await vi.waitFor(async () => {
       expect((await fetch(`${harness.origin}${WEB_CONFIG_PATH}`)).status).toBe(200)
     })

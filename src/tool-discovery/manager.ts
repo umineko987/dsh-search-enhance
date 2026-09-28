@@ -134,7 +134,7 @@ export function installAgentToolDisclosure(
 ): AgentToolDisclosureManager {
   const manager = new AgentToolDisclosureManager(options)
   ctx.effect(() => () => manager.dispose())
-  ctx.on('agent/created', ({ agent }) => manager.attach(agent))
+  ctx.on('agent/created', ({ agent }) => { manager.attach(agent); return undefined })
   ctx.on('agent/disposed', ({ agent }) => manager.detach(agent))
   ctx.on('tools/result', (execution, result) => {
     manager.observeToolResult(execution, result)

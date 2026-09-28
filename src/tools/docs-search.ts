@@ -42,7 +42,7 @@ import {
 } from './schemas.js'
 
 export interface DocsSearchToolDependencies {
-  /** Read the restart-scoped resolved Settings value this plugin instance was loaded with. */
+  /** Read the active plugin instance's resolved configuration. */
   readonly getConfig: () => Config
   readonly documentation: Pick<DocumentationSearchService, 'search'>
   readonly operations: ForegroundOperationScope

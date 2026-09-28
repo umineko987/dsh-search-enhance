@@ -791,7 +791,7 @@ export function SearchEnhancePluginCard({ t }: SearchEnhancePluginCardProps) {
               {!snapshot.writable ? <p style={errorStyle} role="alert">{t('readOnly')}</p> : null}
               <div style={actionsStyle}>
                 <span aria-live="polite">
-                  {feedback === 'saved' ? <span style={successStyle}>{t('savedRestart')}</span> : null}
+                  {feedback === 'saved' ? <span style={successStyle}>{t('savedLive')}</span> : null}
                   {feedback === 'conflict' ? <span style={errorStyle}>{t('conflict')}</span> : null}
                   {feedback === 'error' ? <span style={errorStyle}>{t('saveFailed')}</span> : null}
                 </span>

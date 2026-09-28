@@ -125,36 +125,6 @@ function withPending(
   return Object.freeze({ activeGroups: state.activeGroups, pendingNativeCalls })
 }
 
-function readToolResultCallId(value: unknown): string | undefined {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined
-  const content = (value as { content?: unknown }).content
-  if (!Array.isArray(content) || content.length !== 1) return undefined
-  const block = content[0]
-  if (block === null || typeof block !== 'object' || Array.isArray(block)) return undefined
-  if ((block as { type?: unknown }).type !== 'tool-result') return undefined
-  const callId = (block as { toolCallId?: unknown }).toolCallId
-  return typeof callId === 'string' ? callId : undefined
-}
-
-function isSuccessfulToolResult(data: {
-  readonly error?: unknown
-  readonly message?: unknown
-}): boolean {
-  if (data.error !== undefined) return false
-  const message = data.message
-  if (message === null || typeof message !== 'object' || Array.isArray(message)) return false
-  const content = (message as { content?: unknown }).content
-  if (!Array.isArray(content) || content.length !== 1) return false
-  const block = content[0]
-  return (
-    block !== null
-    && typeof block === 'object'
-    && !Array.isArray(block)
-    && (block as { type?: unknown }).type === 'tool-result'
-    && (block as { isError?: unknown }).isError !== true
-  )
-}
-
 /**
  * Fold one standard Session event into disclosure state. The input state is never
  * mutated; failed, cancelled, malformed, unknown, or unpaired calls fail closed.
@@ -184,7 +154,7 @@ export function foldToolDisclosureEvent(
   }
 
   if (event.type === 'tool/result') {
-    const callId = readToolResultCallId(event.data.message)
+    const callId = event.data.message.toolCallId
     if (callId === undefined) return state
     const pending = state.pendingNativeCalls.get(callId)
     if (pending === undefined) return state
@@ -195,7 +165,8 @@ export function foldToolDisclosureEvent(
     if (
       pending.turn !== event.data.turn
       || pending.step !== event.data.step
-      || !isSuccessfulToolResult(event.data)
+      || event.data.error !== undefined
+      || event.data.message.isError
       || (pending.sourceProducer && !sourceProduced)
     ) return withPending(state, pendingNativeCalls)
     return addActiveGroups(state, pending.groups, pendingNativeCalls)

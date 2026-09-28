@@ -29,8 +29,8 @@ vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
   Menu: ({ open, anchor, items, selectedIds, onSelect }: ComponentProps<typeof import('@deepseek-ai/dsh-client-ui-primitives').Menu>) => (
     <>{anchor}{open ? (
       <div role="menu">
-        {items.map(item => 'type' in item ? null : (
-          <button key={item.id} role="menuitem" disabled={item.disabled} data-selected={selectedIds?.includes(item.id) ?? false} onClick={() => { onSelect(item.id) }}>
+        {items?.map(item => 'type' in item ? null : (
+          <button key={item.id} role="menuitem" disabled={item.disabled} data-selected={selectedIds?.includes(item.id) ?? false} onClick={() => { onSelect?.(item.id) }}>
             {item.label}
           </button>
         ))}
@@ -65,7 +65,7 @@ function snapshot(overrides: Partial<WebConfigSnapshot> = {}): WebConfigSnapshot
   return {
     namespace: 'search-enhance',
     revision: 0,
-    applies: 'restart',
+    applies: 'live',
     writable: true,
     value: {
       defaultProfile: 'auto',
@@ -187,14 +187,14 @@ class TestSlots extends Service {
     super(ctx, 'slots')
     this.ctx.effect(() => this.register({
       name: 'root',
-      children: { 'settings.plugin.item': { kind: 'keyed', scope: 'root' } },
-    }, ({ renderSlot }: PropsRenderSlots<'settings.plugin.item'>) => (
-      renderSlot('settings.plugin.item', {}, { entryKey: 'search-enhance' })
+      children: { 'settings.plugins.tab': { kind: 'list', scope: 'root' } },
+    }, ({ renderSlot }: PropsRenderSlots<'settings.plugins.tab'>) => (
+      renderSlot('settings.plugins.tab', {}, { only: 'search-enhance' })
     )), 'test settings slot declaration')
   }
 
   get entries() {
-    return this.core.entries('settings.plugin.item')
+    return this.core.entries('settings.plugins.tab')
   }
 
   inject(_name: string, register: () => unknown): void {
@@ -213,7 +213,7 @@ afterEach(async () => {
 })
 
 describe('Search Enhance browser contribution', () => {
-  it('registers one keyed settings card and cleans it across restart/dispose', async () => {
+  it('registers a Plugins settings tab and cleans it across restart/dispose', async () => {
     const ctx = new Context()
     contexts.add(ctx)
     await ctx.plugin(TestSlots)
@@ -227,14 +227,15 @@ describe('Search Enhance browser contribution', () => {
     const locale = ctx.get('locale') as unknown as TestLocale
 
     expect(slots.entries).toHaveLength(1)
-    expect(slots.entries[0]?.options).toEqual({ key: snapshot().namespace })
+    expect(slots.entries[0]?.options).toMatchObject({ id: snapshot().namespace })
+    expect(slots.entries[0]?.options.label).toBeTypeOf('function')
     expect(slots.entries[0]?.locale).toBe('settings.search-enhance')
     expect(slots.entries[0]?.component).toBe(SearchEnhancePluginCard)
     expect(locale.namespaces).toEqual(new Set(['settings.search-enhance']))
 
     await plugin.restart()
     expect(slots.entries).toHaveLength(1)
-    expect(slots.entries[0]?.options.key).toBe(snapshot().namespace)
+    expect(slots.entries[0]?.options.id).toBe(snapshot().namespace)
     expect(locale.namespaces).toEqual(new Set(['settings.search-enhance']))
 
     await plugin.dispose()
@@ -242,7 +243,7 @@ describe('Search Enhance browser contribution', () => {
     expect(locale.namespaces).toHaveLength(0)
   })
 
-  it('loads an existing third-party Grok configuration and saves only the edited path with restart feedback', async () => {
+  it('loads an existing third-party Grok configuration and saves only the edited path with immediate feedback', async () => {
     const initial = snapshot()
     let patchBody: unknown
     const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
@@ -271,7 +272,7 @@ describe('Search Enhance browser contribution', () => {
     fireEvent.change(screen.getByLabelText(en.model), { target: { value: 'grok-custom-next' } })
     fireEvent.click(screen.getByRole('button', { name: en.save }))
 
-    expect(await screen.findByText(en.savedRestart)).toBeTruthy()
+    expect(await screen.findByText(en.savedLive)).toBeTruthy()
     expect(patchBody).toEqual({
       expectedRevision: 0,
       mutations: [{ op: 'set', path: ['searchApi', 'model'], value: 'grok-custom-next' }],
@@ -312,7 +313,7 @@ describe('Search Enhance browser contribution', () => {
     expect(credentials.getByText(en.saveConfigFirst)).toBeTruthy()
     expect((credentials.getByLabelText(t('keyValue', { name: en.exa })) as HTMLInputElement).disabled).toBe(true)
     fireEvent.click(screen.getByRole('button', { name: en.save }))
-    expect(await screen.findByText(en.savedRestart)).toBeTruthy()
+    expect(await screen.findByText(en.savedLive)).toBeTruthy()
     expect(patchBody).toEqual({ expectedRevision: 0, mutations: [
       { op: 'set', path: ['searchApi', 'baseUrl'], value: next.value.searchApi.baseUrl },
       { op: 'set', path: ['providers', 'exa', 'baseUrl'], value: next.value.providers.exa.baseUrl },
@@ -363,7 +364,7 @@ describe('Search Enhance browser contribution', () => {
     fireEvent.change(direct, { target: { value: '' } })
     fireEvent.click(screen.getByRole('button', { name: en.save }))
 
-    expect(await screen.findByText(en.savedRestart)).toBeTruthy()
+    expect(await screen.findByText(en.savedLive)).toBeTruthy()
     expect(patchBody).toEqual({
       expectedRevision: 0,
       mutations: [
@@ -429,7 +430,7 @@ describe('Search Enhance browser contribution', () => {
     fireEvent.change(research, { target: { value: '10' } })
     fireEvent.click(screen.getByRole('button', { name: en.save }))
 
-    expect(await screen.findByText(en.savedRestart)).toBeTruthy()
+    expect(await screen.findByText(en.savedLive)).toBeTruthy()
     expect(patchBody).toEqual({
       expectedRevision: 0,
       mutations: [

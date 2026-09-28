@@ -37,7 +37,7 @@ import {
 } from './schemas.js'
 
 export interface WebExtractToolDependencies {
-  /** Read the restart-scoped resolved Settings value this plugin instance was loaded with. */
+  /** Read the active plugin instance's resolved configuration. */
   readonly getConfig: () => Config
   readonly operations: ForegroundOperationScope
   readonly orchestrator: Pick<WebExtractOrchestrator, 'extract'>

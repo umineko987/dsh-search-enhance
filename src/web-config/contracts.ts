@@ -144,7 +144,7 @@ export interface WebDiagnosticStatus {
 export interface WebConfigSnapshot {
   namespace: 'search-enhance'
   revision: number
-  applies: 'restart'
+  applies: 'live'
   writable: boolean
   value: WebEditableConfig
   base?: WebConfigLayer

@@ -1,6 +1,6 @@
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { AgentRegistry } from '@deepseek-ai/dsh-agent'
-import { WorkerThreadCodeRuntime } from '@deepseek-ai/dsh-code-runtime-worker-thread'
+import { PtcRuntime, type PtcRunRequest, type PtcRunResult, type PtcRunSpec } from '@deepseek-ai/dsh-ptc-runtime'
 import { Context } from '@deepseek-ai/cordis'
 import { ToolCallId, createToolResultMessage } from '@deepseek-ai/dsh-llm'
 import { createScope, type Scope, type ScopeKey } from '@deepseek-ai/dsh-scope'
@@ -120,19 +120,20 @@ interface RuntimeHarness {
   manager: AgentToolDisclosureManager | undefined
 }
 
+/** This suite tests Code presentation, not program execution or confinement. */
+class PresentationPtcRuntime extends PtcRuntime {
+  readonly language = 'typescript'
+  readonly isolation = 'test'
+  resolve(_request: PtcRunRequest): PtcRunSpec { throw new Error('Not exercised') }
+  run(_spec: PtcRunSpec): Promise<PtcRunResult> { throw new Error('Not exercised') }
+}
+
 async function createHarness(mode: 'native' | 'ptc' = 'native'): Promise<RuntimeHarness> {
   const ctx = new Context()
   new SessionStore(ctx)
   new AgentRegistry(ctx)
   new SystemPrompt(ctx, {})
-  if (mode === 'ptc') {
-    new WorkerThreadCodeRuntime(ctx, {
-      computeMs: 1000,
-      maxWallMs: 5000,
-      maxOutputBytes: 64 * 1024,
-      maxOldGenerationSizeMb: 64,
-    })
-  }
+  if (mode === 'ptc') new PresentationPtcRuntime(ctx)
   const runtime = new ToolRuntime(ctx, { mode })
   const registry = operationRegistry()
   const baseFiber = ctx.plugin((pluginCtx: Context) => {

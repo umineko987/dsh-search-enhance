@@ -6,10 +6,8 @@ import type { StoredSourceRecord } from '../contracts/index.js'
 function successfulTopLevelResult(event: SessionEvent, callId: string): boolean {
   if (event.type !== 'tool/result') return false
   if (event.data.error !== undefined) return false
-  const block = event.data.message.content[0]
-  return block?.type === 'tool-result'
-    && String(block.toolCallId) === callId
-    && block.isError !== true
+  return event.data.message.toolCallId === callId
+    && event.data.message.isError !== true
 }
 
 function successfulCodeDispatch(

@@ -18,7 +18,6 @@
 - `docs_search` 只在提供明确 `library_name` 或 `library_id` 时使用 Context7；没有库身份的请求使用 Exa 发现。
 - `web_extract` 每次必须通过 `provider` 指定一家用户已启用的服务：`tavily_extract`、`firecrawl_scrape`、`smart_direct` 或 `direct`。结果报告提取路径、证据等级和页面元数据，失败不自动换服务。
 - 来源分页、Context7 精细操作、站点映射、研究计划和诊断通过 `search_tools` 与 `search_call` 按需披露。
-- Native Tool Mode 与 Code Mode 使用相同的固定工具入口和规范输出。DSH Settings、Credentials、Agent Preset、guard 和生命周期清理继续生效。
 - 补充搜索默认不选择任何 Provider。未选中的服务不会被请求；选中服务缺少凭据或执行失败会在结果中显示警告。
 
 完整的路由、证据处理和渐进披露流程见[搜索链路架构](https://github.com/umineko987/dsh-search-enhance/blob/main/guides/search-workflow.zh.md)。
@@ -27,7 +26,7 @@
 
 ### 1. 安装
 
-仅支持 DSH `0.1.5-rc.3`。DSH 依赖精确锁定到该版本，不兼容旧版或其他预发行版。
+支持 DSH `0.1.7-rc.2`，DSH 依赖精确锁定到该版本。
 
 将 [npm 上发布的 bundle](https://www.npmjs.com/package/dsh-search-enhance) 安装到 DSH `web` profile：
 
@@ -61,10 +60,10 @@ dsh web
 - 版本路径可省略：`https://api.x.ai` / `https://us.api.x.ai` 自动补 `/v1`；`https://openrouter.ai` 自动补 `/api/v1`，填到 `/api` 时补 `/v1`。搜索与模型列表请求都会补全，不重复追加完整路径，也不改写自定义中转地址。
 - **xAI**：`https://api.x.ai/v1`（也支持 `https://us.api.x.ai/v1`），模型如 `grok-4.6`。自动使用 Responses 并发送 `web_search` + `x_search`，即使设置选择了 `completions`；不改写已保存的设置。
 - **OpenRouter**：`https://openrouter.ai/api/v1`，模型如 `x-ai/grok-4.6`。保留所选协议，发送 `openrouter:web_search`、`engine: native`，无需 `:online` 后缀。OpenRouter 的模型能力和工作区策略仍可能影响实际搜索引擎；严格禁止其回退时，在工作区仅允许 `native`。
-- 只匹配上述官方 HTTPS 域名及 Grok 模型；其他模型、中转端点保持原行为。官方适配中 `minimal` 映射为 `low`、`max` 映射为 `xhigh`，`off` 仍表示省略思考参数。
+- 只对上述官方 HTTPS 域名及 Grok 模型启用原生搜索；自定义网关使用所选协议。官方适配中 `minimal` 映射为 `low`、`max` 映射为 `xhigh`，`off` 表示省略思考参数。
 - 结构化引用会进入来源列表。若 API 未报告完成的搜索、结构化引用或搜索用量，结果会明确提示原生搜索未确认；正文链接本身不作为执行证明。
 
-保存设置并重启 DSH，然后询问一个需要当前信息的问题。成功时会看到 `Search` 工具行、回答和来源链接。
+保存设置后即可询问一个需要当前信息的问题。保存配置时 DSH 会在进程内自动热重载本插件，配置立即生效，无需重启 DSH；正在执行的插件请求可能被中断。成功时会看到 `Search` 工具行、回答和来源链接。
 
 ## 使用示例
 
@@ -88,11 +87,9 @@ dsh web
 | Tavily | 补充搜索、网页提取和站点映射 | `TAVILY_API_KEY` | 否 |
 | Firecrawl | 补充搜索和网页提取 | `FIRECRAWL_API_KEY` | 否 |
 
-在插件设置中，可以多选 **补充搜索 Provider**。选中项与主搜索并行执行，每家使用 `supplementalSearch.maxSourcesPerProvider` 限制来源数量（默认 `5`，最大 `100`）。选择对所有搜索 profile 生效，不再隐式启用 Exa，也不再按 60/40 分摊共享预算。
+在插件设置中，可以多选 **补充搜索 Provider**。选中项与主搜索并行执行，每家使用 `supplementalSearch.maxSourcesPerProvider` 限制来源数量（默认 `5`，最大 `100`）。选择对所有搜索 profile 生效。
 
 另外，多选 **网页提取 Provider** 可以限制 Agent 可用的服务范围。每次 `web_extract` 必须明确选择一家已启用服务，例如 `{ "url": "https://example.com/", "provider": "direct", "format": "markdown" }`。服务被禁用、缺少凭据、不支持格式或执行失败时，直接报告错误，不自动回退。提取服务默认全部启用，可取消勾选不希望使用的服务。
-
-**配置变更：** 原 `extraDiscoverySources` 按 profile 设置的预算改为 `supplementalSearch` 选择项。需要明确启用 `exa`、`tavily` 和/或 `firecrawl`；已有 API 凭据本身不会开启补充搜索。现有提取服务的 `enabled` 开关继续作为可用名单。保存设置后重启 DSH。`fallbackMode` 现在仅影响保持原样的文档搜索路由。
 
 对于 `docs_search`，Context7 需要明确的 `library_name` 或 `library_id`。两者都未提供时，`provider: "auto"` 使用 Exa，不会根据完整问题猜测包名。
 
