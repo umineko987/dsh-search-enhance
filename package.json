@@ -1,6 +1,6 @@
 {
   "name": "dsh-search-enhance",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "Bounded search, documentation, extraction, progressively disclosed site mapping/research planning, and read-only diagnostics for DeepSeek Harness",
   "repository": {
     "type": "git",
