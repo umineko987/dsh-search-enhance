@@ -150,9 +150,10 @@ export function buildSearchApiRequest(input: BuildSearchApiRequestInput): Prepar
     : level === 'minimal' ? 'low' : level === 'max' ? 'xhigh' : level)
   const tools = nativeSearch === 'xai'
     ? [{ type: 'web_search' }, { type: 'x_search' }]
-    : nativeSearch === 'openrouter'
-      ? [{ type: 'openrouter:web_search', parameters: { engine: 'native' } }]
-      : undefined
+    : undefined
+  const plugins = nativeSearch === 'openrouter'
+    ? [{ id: 'web', engine: 'native' }]
+    : undefined
   const endpoint = searchApiEndpoint(input.config.baseUrl, protocol)
   const user = `${input.timeContext === undefined ? '' : renderCurrentTimeContext(input.timeContext)}${query}`
 
@@ -165,6 +166,7 @@ export function buildSearchApiRequest(input: BuildSearchApiRequestInput): Prepar
         store: false,
         stream: true,
         ...(tools === undefined ? {} : { tools }),
+        ...(plugins === undefined ? {} : { plugins }),
       })
     : snapshotBody({
         messages: [
@@ -176,6 +178,7 @@ export function buildSearchApiRequest(input: BuildSearchApiRequestInput): Prepar
           ? { reasoning: { effort } } : { reasoning_effort: effort }),
         stream: true,
         ...(tools === undefined ? {} : { tools }),
+        ...(plugins === undefined ? {} : { plugins }),
       })
 
   return Object.freeze({

@@ -147,20 +147,20 @@ describe('credential-free Search API request construction', () => {
     expect(Object.isFrozen((request.body as { tools: unknown[] }).tools)).toBe(true)
   })
 
-  it.each(SEARCH_API_PROTOCOLS)('enables OpenRouter native tools while retaining %s', (protocol) => {
+  it.each(SEARCH_API_PROTOCOLS)('enables the strict OpenRouter native web plugin while retaining %s', (protocol) => {
     const request = prepare(protocol, 'max', {
       baseUrl: 'https://openrouter.ai',
-      model: 'x-ai/grok-4.6',
+      model: 'x-ai/grok-4.20-multi-agent',
     })
     expect(request.protocol).toBe(protocol)
     expect(request.endpoint).toBe(`https://openrouter.ai/api/v1/${protocol === 'responses' ? 'responses' : 'chat/completions'}`)
     expect(request.body).toMatchObject({
-      model: 'x-ai/grok-4.6',
+      model: 'x-ai/grok-4.20-multi-agent',
       reasoning: { effort: 'xhigh' },
-      tools: [{ type: 'openrouter:web_search', parameters: { engine: 'native' } }],
+      plugins: [{ id: 'web', engine: 'native' }],
     })
     expect(request.body).not.toHaveProperty('reasoning_effort')
-    expect(request.body).not.toHaveProperty('plugins')
+    expect(request.body).not.toHaveProperty('tools')
   })
 
   it('supports the official regional endpoint and maps minimal reasoning without changing off', () => {

@@ -189,6 +189,7 @@ Sources:
   it.each([
     ['https://api.x.ai/v1', 'grok-4.6', 'completions'],
     ['https://openrouter.ai/api/v1', 'x-ai/grok-4.6', 'completions'],
+    ['https://openrouter.ai/api/v1', 'x-ai/grok-4.20-multi-agent', 'completions'],
     ['https://openrouter.ai/api/v1', 'x-ai/grok-4.6', 'responses'],
   ] as const)('dispatches native search to %s with %s/%s', async (baseUrl, model, protocol) => {
     const config = resolveConfig({ searchApi: { baseUrl, model, protocol, thinkingLevel: 'max' } })
@@ -197,9 +198,13 @@ Sources:
       if (String(input).endsWith('/models')) return jsonResponse({ data: [{ id: model }] })
       const request = JSON.parse(String(init?.body))
       expect(request.model).toBe(model)
-      expect(request.tools).toEqual(baseUrl.includes('api.x.ai')
-        ? [{ type: 'web_search' }, { type: 'x_search' }]
-        : [{ type: 'openrouter:web_search', parameters: { engine: 'native' } }])
+      if (baseUrl.includes('api.x.ai')) {
+        expect(request.tools).toEqual([{ type: 'web_search' }, { type: 'x_search' }])
+        expect(request).not.toHaveProperty('plugins')
+      } else {
+        expect(request.plugins).toEqual([{ id: 'web', engine: 'native' }])
+        expect(request).not.toHaveProperty('tools')
+      }
       expect(request.reasoning).toEqual({ effort: 'xhigh' })
       const citation = { type: 'url_citation', url: 'https://primary.test/page', title: 'Primary' }
       return jsonResponse(effectiveProtocol === 'responses'
