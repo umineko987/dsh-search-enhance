@@ -1,133 +1,91 @@
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Context } from '@deepseek-ai/cordis'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
-import type {
-  PtcDispatchLog,
-  ToolDefinition,
-  ToolExecution,
-  ToolExecutionResult,
-} from '@deepseek-ai/dsh-tools'
+import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 
-import { isSourceRef } from '../source-storage/index.js'
+import type { ToolDiscoveryMode } from '../config.js'
+import { CAPABILITY_GROUPS, type CapabilityGroup } from './capabilities.js'
 import {
-  createSourceProducedBlock,
-  SOURCE_PRODUCING_TOOL_NAMES,
+  foldToolDisclosureEvent,
+  foldToolDisclosureEvents,
+  type ToolDisclosureFoldState,
 } from './fold.js'
 
 export interface AgentToolDisclosureManagerOptions {
-  /** Rich protocol definition installed only as an exact Agent-scope shadow. */
+  readonly mode: ToolDiscoveryMode
   readonly webSearchDefinition: ToolDefinition
+  readonly deferredTools: Readonly<Record<CapabilityGroup, ToolDefinition>>
 }
 
 interface AgentToolState {
   readonly agent: Agent
-  readonly sourceResults: Map<string, boolean>
-  disposeWebSearchShadow: (() => void) | undefined
+  readonly disposers: Map<CapabilityGroup, () => void>
+  disposeWebSearchShadow?: () => void
+  fold: ToolDisclosureFoldState
 }
 
-/**
- * Own the per-Agent web_search shadow and the live-to-durable bridge for Code
- * source publication facts. Capability recovery itself folds only standard
- * Session events; this manager never changes tool visibility after attachment.
- */
+/** Own Agent-scoped real tools; loading is committed only at a completed step boundary. */
 export class AgentToolDisclosureManager {
-  private readonly webSearchDefinition: ToolDefinition
-  private readonly byAgent = new Map<Agent, AgentToolState>()
   private readonly bySession = new Map<Session, AgentToolState>()
-  private disposed = false
 
-  constructor(options: AgentToolDisclosureManagerOptions) {
-    if (options.webSearchDefinition.name !== 'web_search') {
-      throw new TypeError('Agent web-search shadow definition must be named "web_search"')
-    }
-    this.webSearchDefinition = options.webSearchDefinition
-  }
+  constructor(private readonly options: AgentToolDisclosureManagerOptions) {}
 
   attach(agent: Agent): void {
-    if (this.disposed || this.byAgent.has(agent)) return
     const existing = this.bySession.get(agent.session)
-    if (existing !== undefined && existing.agent !== agent) {
-      throw new Error(`session ${agent.session.id} is already attached to another Agent`)
-    }
+    if (existing?.agent === agent) return
+    if (existing !== undefined) throw new Error(`session ${agent.session.id} already has a live Agent`)
     const state: AgentToolState = {
       agent,
-      sourceResults: new Map(),
-      disposeWebSearchShadow: undefined,
+      disposers: new Map(),
+      fold: foldToolDisclosureEvents(agent.session.snapshotEvents()),
     }
-    this.byAgent.set(agent, state)
     this.bySession.set(agent.session, state)
     try {
+      // Preserve the host's decision to expose web_search before installing the rich shadow.
       if (agent.ctx.tools.get('web_search', agent) !== undefined) {
-        state.disposeWebSearchShadow = agent.ctx.tools.register(this.webSearchDefinition)
+        state.disposeWebSearchShadow = agent.ctx.tools.register(this.options.webSearchDefinition)
       }
+      this.registerLoadedTools(state)
     } catch (error) {
-      this.byAgent.delete(agent)
-      this.bySession.delete(agent.session)
-      state.disposeWebSearchShadow?.()
+      this.detach(agent)
       throw error
     }
   }
 
-  detach(agent: Agent): void {
-    const state = this.byAgent.get(agent)
-    if (state === undefined) return
-    this.byAgent.delete(agent)
-    this.bySession.delete(agent.session)
-    const disposeWebSearchShadow = state.disposeWebSearchShadow
-    state.disposeWebSearchShadow = undefined
-    state.sourceResults.clear()
-    disposeWebSearchShadow?.()
+  activeGroups(agent: Agent): readonly CapabilityGroup[] {
+    const state = this.bySession.get(agent.session)
+    if (state?.agent !== agent) throw new Error('search_tools requires an attached live Agent')
+    return CAPABILITY_GROUPS.filter(group => state.disposers.has(group))
   }
 
-  /** Observe final canonical Code sub-call values before their durable log is shaped. */
-  observeToolResult(execution: ToolExecution, result: ToolExecutionResult): void {
-    if (
-      this.disposed
-      || execution.agent === undefined
-      || execution.parent === undefined
-      || !SOURCE_PRODUCING_TOOL_NAMES.includes(execution.name as never)
-    ) return
-    const state = this.byAgent.get(execution.agent)
-    if (state === undefined) return
-    const value = !result.isError && 'value' in result ? result.value : undefined
-    const sourceProduced = (
-      value !== null
-      && typeof value === 'object'
-      && !Array.isArray(value)
-      && isSourceRef((value as { source_ref?: unknown }).source_ref)
-    )
-    state.sourceResults.set(String(execution.callId), sourceProduced)
-  }
-
-  /** Append one reference-free recovery fact to a successful Code dispatch log. */
-  shapeCodeDispatchLog(dispatch: PtcDispatchLog, content: ContentBlock[]): ContentBlock[] {
-    if (this.disposed || dispatch.agent === undefined) return content
-    const state = this.byAgent.get(dispatch.agent)
-    const callId = String(dispatch.subCallId)
-    const sourceProduced = state?.sourceResults.get(callId) === true
-    state?.sourceResults.delete(callId)
-    if (
-      dispatch.isError
-      || !SOURCE_PRODUCING_TOOL_NAMES.includes(dispatch.name as never)
-      || !sourceProduced
-    ) return content
-    return [...content, createSourceProducedBlock()]
+  private registerLoadedTools(state: AgentToolState): void {
+    const groups = this.options.mode === 'all' ? CAPABILITY_GROUPS : state.fold.activeGroups
+    for (const group of groups) {
+      if (state.disposers.has(group)) continue
+      state.disposers.set(group, state.agent.ctx.tools.register(this.options.deferredTools[group]))
+    }
   }
 
   observeSession(session: Session, event: SessionEvent): void {
-    if (event.type !== 'step/end' && event.type !== 'turn/end') return
-    this.bySession.get(session)?.sourceResults.clear()
+    const state = this.bySession.get(session)
+    if (state === undefined) return
+    state.fold = foldToolDisclosureEvent(state.fold, event)
+    if (event.type === 'step/end') this.registerLoadedTools(state)
+  }
+
+  detach(agent: Agent): void {
+    const state = this.bySession.get(agent.session)
+    if (state?.agent !== agent) return
+    this.bySession.delete(agent.session)
+    for (const dispose of state.disposers.values()) dispose()
+    state.disposeWebSearchShadow?.()
   }
 
   dispose(): void {
-    if (this.disposed) return
-    this.disposed = true
-    for (const agent of [...this.byAgent.keys()]) this.detach(agent)
+    for (const { agent } of [...this.bySession.values()]) this.detach(agent)
   }
 }
 
-/** Install Agent lifecycle, source observation, and replay-safe Code log shaping. */
 export function installAgentToolDisclosure(
   ctx: Context,
   options: AgentToolDisclosureManagerOptions,
@@ -136,15 +94,7 @@ export function installAgentToolDisclosure(
   ctx.effect(() => () => manager.dispose())
   ctx.on('agent/created', ({ agent }) => { manager.attach(agent); return undefined })
   ctx.on('agent/disposed', ({ agent }) => manager.detach(agent))
-  ctx.on('tools/result', (execution, result) => {
-    manager.observeToolResult(execution, result)
-    return undefined
-  })
-  ctx.on('tools/ptc-dispatch-log', async (dispatch, next) => (
-    manager.shapeCodeDispatchLog(dispatch, await next())
-  ))
   ctx.on('session/event', (session, event) => manager.observeSession(session, event))
-
   for (const agent of ctx.agents.list()) manager.attach(agent)
   return manager
 }

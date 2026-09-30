@@ -315,7 +315,6 @@ describe('docs_search execution and durable publication', () => {
         },
       },
       operations,
-      sourceOperationNotice: 'source operation manifest',
       sources: {
         record: async (owner, call, candidate, signal) => {
           order.push('record')
@@ -379,7 +378,6 @@ describe('docs_search execution and durable publication', () => {
         },
       },
       operations,
-      sourceOperationNotice: 'source operation manifest',
       sources: {
         record: async () => { throw new Error('record must not run') },
       },
@@ -419,7 +417,6 @@ describe('docs_search execution and durable publication', () => {
       getConfig: () => resolvedConfig(),
       documentation: { search: async () => empty },
       operations,
-      sourceOperationNotice: 'source operation manifest',
       sources: {
         record: async () => {
           records += 1
@@ -448,7 +445,6 @@ describe('docs_search execution and durable publication', () => {
       getConfig: () => resolvedConfig(),
       documentation: { search: async () => docsResult() },
       operations,
-      sourceOperationNotice: 'source operation manifest',
       sources: {
         record: async () => {
           controller.abort()
@@ -472,7 +468,6 @@ describe('docs_search execution and durable publication', () => {
       getConfig: () => resolvedConfig(),
       documentation: { search: async () => docsResult() },
       operations,
-      sourceOperationNotice: 'source operation manifest',
       sources: { record: async () => { throw failure } },
     })
     const args = { query: 'React docs' }
@@ -802,8 +797,7 @@ describe('Native model text', () => {
         { code: 'provider_not_configured', provider: 'firecrawl', capability: 'web_search' },
       ],
     }
-    const notice = '{"capability":"sources","operations":[{"name":"search_sources"}]}'
-    const text = renderWebSearchText(value, notice)
+    const text = renderWebSearchText(value)
     const reason = state === 'partial' ? 'search-api/main_search, rate_limited' : 'exa/docs_search, network'
     expect(text.startsWith('Limitations\n- ')).toBe(true)
     expect(text).toContain(reason)
@@ -811,7 +805,7 @@ describe('Native model text', () => {
     expect(text.indexOf(reason)).toBeLessThan(text.indexOf('The answer, visible sources'))
     expect(text).not.toContain('SNIPPET_TAIL')
     expect(text).toContain(`Source reference: ${sourceRef}`)
-    expect(text.endsWith(notice)).toBe(true)
+    expect(text).toContain('call search_sources directly on the next step')
     expect(Buffer.byteLength(text, 'utf8')).toBeLessThanOrEqual(value.model_text_max_bytes)
     expect(Buffer.from(text, 'utf8').toString('utf8')).toBe(text)
   })

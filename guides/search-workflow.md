@@ -23,14 +23,11 @@ DSH Agent
   ├─ web_extract ─────> one explicit user-enabled Provider
   │                       └─ page body + route metadata, or error (no fallback)
   │
-  ├─ search_tools ────> capability and operation manifests on demand
+  ├─ search_tools ────> load optional real tools for the next step
   │
-  └─ search_call ─────> an active deferred operation
-                          ├─ granular Context7 lookup
-                          ├─ complete source pagination
-                          ├─ site mapping
-                          ├─ offline research planning
-                          └─ read-only diagnostics
+  ├─ search_sources ──> complete source pagination (when loaded)
+  │
+  └─ web_map ─────────> bounded site URL discovery (when loaded)
 ```
 
 The plugin keeps discovery, retention, and verification separate:
@@ -43,41 +40,38 @@ Prefer `web_extract` for webpage bodies such as articles, blogs, repository READ
 
 Independent `web_search` and `web_extract` calls within one model step may overlap up to DSH's concurrency limit. Source record writes still use the existing serial queue, keeping each call identity and source reference separate.
 
-## Fixed model-facing surface
+## Resident tools and on-demand loading
 
-The model sees the same five search tools throughout an Agent run:
+Four tools are resident; two optional tools are registered in the current Agent scope only when requested:
 
 | Tool | Role |
 | --- | --- |
 | `web_search` | Run the main Grok-compatible search and merge user-selected supplementary sources. |
 | `docs_search` | Query Context7 with an explicit library identity, or use Exa for broader discovery. |
 | `web_extract` | Retrieve one selected page with a required, user-enabled `provider`. |
-| `search_tools` | Return manifests for deferred capabilities without registering more model tools. |
-| `search_call` | Execute a deferred operation after it becomes active. |
+| `search_tools` | Load `search_sources` and/or `web_map` for direct calls on the next step. |
 
 `web_search` is installed through the Agent integration so existing DSH Presets and tool guards remain authoritative. The plugin does not add a second general-search tool or re-enable search where the Agent has disabled it.
 
-Native Tool Mode and Code Mode use the same schemas, operation policy, and canonical outputs. Disclosure changes operation availability, not the model-facing tool list or its ordering.
+Native Tool Mode receives real tool schemas; Code Mode receives corresponding SDK entries. DSH owns argument validation, execution, presentation, and policy guards using the actual tool names. `tools.restrict` filters inherited tools, not a scope's own registrations; use the host's monotonic `tools.guard` to deny an Agent-local optional tool.
 
-## Deferred capabilities
+## Optional capabilities
 
-`search_tools` can disclose one or more of five capability groups:
+`search_tools` accepts only these two capability groups:
 
-| Capability | Deferred operations | Purpose |
+| Capability | Real tool | Purpose |
 | --- | --- | --- |
-| `context7` | `context7_resolve_library_id`, `context7_query_docs`, `context7_get_library_docs`, `context7_get_cached_doc_raw` | Resolve an exact library, query its docs, or inspect a cached document. |
 | `sources` | `search_sources` | Page through a retained source record. |
 | `site_map` | `web_map` | Discover bounded candidate URLs below a known site. |
-| `planning` | `research_plan` | Build an offline plan for explicit deep or multi-source research. |
-| `diagnostics` | `search_diagnostics` | Show masked configuration or explicitly test Provider connectivity. |
 
-Activation follows these rules:
+Loading follows these rules:
 
-1. In the default `progressive` mode, a newly disclosed capability becomes callable on the next model step.
-2. In `all` mode, deferred operations are active immediately, but they still run through `search_call`.
-3. `search_call` rejects an inactive or unknown operation; it does not bypass the registry.
-4. When `web_search` or `docs_search` returns a `source_ref`, the plugin activates `sources` and appends the real `search_sources` manifest automatically.
-5. Disclosure never registers each operation as another model tool. The five-tool surface stays fixed.
+1. In the default `progressive` mode, a successful loading request registers tools after `step/end`; they become callable on the next model step.
+2. In `all` mode, both optional tools are registered when the Agent attaches.
+3. Call loaded tools directly. There is no manifest registry or execution gateway; loading results contain only group and tool names.
+4. A `source_ref` does not auto-load pagination. Use `search_tools({ capabilities: ["sources"] })` only if additional sources are needed.
+5. Completed successful Native calls and Code dispatch events restore loading after session recovery or plugin reload; interrupted or failed requests do not.
+6. Context7 resolution remains internal to `docs_search`. Research planning belongs to the Agent, and diagnostics remain in the configuration page and backend rather than the model tool list.
 
 ## End-to-end flow
 
@@ -87,9 +81,9 @@ A typical sourced answer proceeds as follows:
 2. `web_search` starts the main Grok-compatible search and every user-selected supplemental Provider in parallel. Exa, Tavily, and Firecrawl each receive the same independent source-count cap; unselected Providers are never requested. No profile or query silently enables another Provider.
 3. Search sources are bounded and normalized. The web-search quality pipeline de-duplicates equivalent URLs and can prioritize official, primary, version-matching, and fresher sources.
 4. `docs_search` uses a supplied `library_id` directly, resolves a supplied `library_name` through Context7, or uses Exa when no library identity is known and `provider: "auto"` is selected.
-5. If a complete source record is retained, the result includes `source_ref`. The Agent can use `search_sources` through `search_call` on the next step in `progressive` mode.
+5. If a complete source record is retained, the result includes `source_ref`. When pagination is needed, load `sources`, then call `search_sources` directly on the next step.
 6. For important claims, the Agent selects authoritative URLs and calls `web_extract` with one explicit `provider` from the enabled list in its tool description. Only that Provider runs; unavailable, unsupported, or failed extraction does not trigger another route.
-7. Site mapping, granular Context7 work, research planning, and diagnostics are disclosed only when the task requires them.
+7. If URL discovery below a known site is needed, load `site_map`, then call `web_map` directly.
 8. The Agent writes the final response from the main answer, retained sources, and any page bodies it actually retrieved, preserving source links and the distinction between discovery and fetched evidence.
 
 A `source_ref` points to a source list; it is not page content. Claim-level conclusions should rely on selected pages retrieved with `web_extract` whenever practical.

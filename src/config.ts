@@ -26,7 +26,7 @@ export const TOOL_DISCOVERY_MODES = ['progressive', 'all'] as const
 export type ToolDiscoveryMode = (typeof TOOL_DISCOVERY_MODES)[number]
 
 export interface ToolDiscoveryConfig {
-  /** progressive gates deferred operations per Agent; all activates every operation. */
+  /** progressive loads real tools per Agent on demand; all registers them at attachment. */
   readonly mode: ToolDiscoveryMode
 }
 
@@ -41,9 +41,6 @@ export const SITE_MAP_DEFAULT_LIMIT = 30
 export const SITE_MAP_MAX_DEPTH = 5
 export const SITE_MAP_MAX_LINKS = 500
 
-/** Hard model-contract bounds for the one-shot offline research planner. */
-export const RESEARCH_PLAN_MAX_KNOWN_URLS = 10
-export const RESEARCH_PLAN_MAX_SUB_QUERIES = 6
 
 export const SEARCH_API_PROTOCOLS = ['completions', 'responses'] as const
 export type SearchApiProtocol = (typeof SEARCH_API_PROTOCOLS)[number]
@@ -278,13 +275,6 @@ export interface WebExtractConfig {
   readonly direct: DirectFetchConfig
 }
 
-/** @deprecated Accepted for one compatibility cycle but ignored by tool registration and visibility. */
-export interface OptionalToolsConfig {
-  readonly webMap: boolean
-  readonly researchPlan: boolean
-  readonly diagnostics: boolean
-}
-
 export interface DiagnosticsConfig {
   /** Unified wall-clock budget for status inspection and all concurrent probes. */
   readonly timeoutMs: number
@@ -297,25 +287,6 @@ export interface DiagnosticsConfig {
   /** Maximum canonical diagnostic JSON envelope exposed to the model. */
   readonly maxOutputBytes: number
   /** Independent maximum UTF-8 bytes rendered into model text. */
-  readonly modelTextMaxBytes: number
-}
-
-export interface ResearchPlanConfig {
-  /** Unicode code-point ceiling for the required top-level research question. */
-  readonly maxQuestionCharacters: number
-  /** Unicode code-point ceiling for each sub-question and stable sub-question id. */
-  readonly maxSubQueryCharacters: number
-  /** Unicode code-point ceiling for each optional explicit tool query. */
-  readonly maxQueryCharacters: number
-  /** Unicode code-point ceiling for each sub-question reason. */
-  readonly maxReasonCharacters: number
-  /** Unicode code-point ceiling for each known or tool-target HTTP(S) URL. */
-  readonly maxKnownUrlCharacters: number
-  /** Deployment count cap within the model contract's ten-URL hard limit. */
-  readonly maxKnownUrls: number
-  /** Complete canonical research-plan JSON envelope byte ceiling. */
-  readonly maxOutputBytes: number
-  /** Independent UTF-8 ceiling for the pure Native model-text projection. */
   readonly modelTextMaxBytes: number
 }
 
@@ -351,12 +322,8 @@ export interface Config {
   readonly cache: CacheConfig
   /** Agent tool-discovery policy; changes take effect after the automatic plugin reload. */
   readonly toolDiscovery: ToolDiscoveryConfig
-  /** @deprecated Accepted and validated for compatibility, but ignored. */
-  readonly optionalTools: OptionalToolsConfig
   /** Independent resource controls for the diagnostics Consumer. */
   readonly diagnostics: DiagnosticsConfig
-  /** Stage-4 deterministic offline research-planning resource controls. */
-  readonly researchPlan: ResearchPlanConfig
   /** Stage-3 extraction tool and route controls. */
   readonly webExtract: WebExtractConfig
   /** Stage-4 Tavily Map collection and output controls. */
@@ -565,13 +532,6 @@ export const Config: Schema<Config> = Schema.object({
   toolDiscovery: Schema.object({
     mode: Schema.union(TOOL_DISCOVERY_MODES).default('progressive'),
   }),
-  optionalTools: Schema.object({
-    webMap: Schema.boolean().default(false),
-    researchPlan: Schema.boolean().default(false),
-    diagnostics: Schema.boolean().default(false),
-  })
-    .description('Deprecated compatibility input. Values are validated but ignored; use toolDiscovery.mode.')
-    .deprecated(),
   diagnostics: Schema.object({
     timeoutMs: positiveInteger(30_000, 120_000),
     maxProbeAttempts: positiveInteger(1, 3),
@@ -583,20 +543,6 @@ export const Config: Schema<Config> = Schema.object({
       .max(1024 * 1024)
       .default(64 * 1024),
     modelTextMaxBytes: positiveInteger(16 * 1024, 1024 * 1024),
-  }),
-  researchPlan: Schema.object({
-    maxQuestionCharacters: positiveInteger(32_000, 1_000_000),
-    maxSubQueryCharacters: positiveInteger(10_000, 100_000),
-    maxQueryCharacters: positiveInteger(10_000, 100_000),
-    maxReasonCharacters: positiveInteger(10_000, 100_000),
-    maxKnownUrlCharacters: positiveInteger(8192, 65_536),
-    maxKnownUrls: Schema.number()
-      .step(1)
-      .min(1)
-      .max(RESEARCH_PLAN_MAX_KNOWN_URLS)
-      .default(RESEARCH_PLAN_MAX_KNOWN_URLS),
-    maxOutputBytes: positiveInteger(256 * 1024, 4 * 1024 * 1024),
-    modelTextMaxBytes: positiveInteger(64 * 1024, 1024 * 1024),
   }),
   siteMap: Schema.object({
     timeoutMs: Schema.number().step(1000).min(10_000).max(150_000).default(150_000),

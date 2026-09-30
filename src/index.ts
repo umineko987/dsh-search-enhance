@@ -1,12 +1,5 @@
 import type { Context } from '@deepseek-ai/cordis'
 
-import {
-  Context7ResolveDiagnosticProbe,
-  SearchApiModelListDiagnosticProbe,
-  SearchDiagnostics,
-  SourceSearchDiagnosticProbe,
-} from './diagnostics/index.js'
-
 import { type Config as SearchEnhanceConfigValue, Config as SearchEnhanceConfig } from './config.js'
 import {
   Context7CachedOperations,
@@ -31,18 +24,10 @@ import {
   SearchEnhanceSourceService,
   SourceRecordStore,
 } from './source-storage/index.js'
-import {
-  foldEffectiveToolDisclosureEvents,
-  installAgentToolDisclosure,
-} from './tool-discovery/index.js'
+import { installAgentToolDisclosure } from './tool-discovery/index.js'
 import {
   ForegroundOperationScope,
-  DeferredOperationRegistry,
-  createContext7Tools,
   createDocsSearchTool,
-  createResearchPlanTool,
-  createSearchCallTool,
-  createSearchDiagnosticsTool,
   createSearchSourcesTool,
   createSearchToolsTool,
   createWebExtractTool,
@@ -108,17 +93,6 @@ export async function apply(ctx: Context, config: SearchEnhanceConfigValue): Pro
   })
   const firecrawl = new FirecrawlSearchProvider(providerDependencies)
   const tavily = new TavilySearchProvider(providerDependencies)
-  const diagnostics = new SearchDiagnostics({
-    credentials: ctx.credentials,
-    probes: [
-      new SearchApiModelListDiagnosticProbe(searchApi),
-      new Context7ResolveDiagnosticProbe(context7Remote),
-      new SourceSearchDiagnosticProbe('docs_search', 'exa', exa),
-      new SourceSearchDiagnosticProbe('main_search', 'exa', exa),
-      new SourceSearchDiagnosticProbe('main_search', 'tavily_search', tavily),
-      new SourceSearchDiagnosticProbe('main_search', 'firecrawl_search', firecrawl),
-    ],
-  })
   const orchestrator = new SearchOrchestrator({
     exa,
     firecrawl,
@@ -134,71 +108,28 @@ export async function apply(ctx: Context, config: SearchEnhanceConfigValue): Pro
     getConfig,
   })
 
-  const deferredOperationDefinitions = [
-    ...createContext7Tools({
-      documentation,
-      getConfig,
-      operations,
+  const disclosure = installAgentToolDisclosure(ctx, {
+    mode: effective.toolDiscovery.mode,
+    webSearchDefinition: createWebSearchTool({
+      getConfig, operations, orchestrator, sources: ctx.searchEnhanceSources,
     }),
-    createSearchSourcesTool({
-      getConfig,
-      operations,
-      sources: ctx.searchEnhanceSources,
-    }),
-    createWebMapTool({
-      getConfig,
-      operations,
-      provider: new TavilyMapProvider(providerDependencies),
-    }),
-    createResearchPlanTool({
-      getConfig,
-      isWebMapAvailable: agent => agent !== undefined && (
-        effective.toolDiscovery.mode === 'all'
-        || foldEffectiveToolDisclosureEvents(agent.session.snapshotEvents()).activeGroups
-          .includes('site_map')
-      ),
-      operations,
-    }),
-    createSearchDiagnosticsTool({
-      getConfig,
-      operations,
-      reporter: diagnostics,
-    }),
-  ]
-  const deferredOperations = new DeferredOperationRegistry(deferredOperationDefinitions)
-  const sourceOperationNotice = deferredOperations.renderCapabilityDisclosure('sources')
-  const webSearchDefinition = createWebSearchTool({
-    getConfig,
-    operations,
-    orchestrator,
-    sourceOperationNotice,
-    sources: ctx.searchEnhanceSources,
+    deferredTools: {
+      sources: createSearchSourcesTool({
+        getConfig, operations, sources: ctx.searchEnhanceSources,
+      }),
+      site_map: createWebMapTool({
+        getConfig, operations, provider: new TavilyMapProvider(providerDependencies),
+      }),
+    },
   })
   const residentToolDefinitions = [
     createDocsSearchTool({
-      documentation,
-      getConfig,
-      operations,
-      sourceOperationNotice,
-      sources: ctx.searchEnhanceSources,
+      documentation, getConfig, operations, sources: ctx.searchEnhanceSources,
     }),
-    createWebExtractTool({
-      getConfig,
-      operations,
-      orchestrator: webExtract,
-    }),
-    createSearchToolsTool({
-      mode: effective.toolDiscovery.mode,
-      registry: deferredOperations,
-    }),
-    createSearchCallTool({
-      mode: effective.toolDiscovery.mode,
-      registry: deferredOperations,
-    }),
+    createWebExtractTool({ getConfig, operations, orchestrator: webExtract }),
+    createSearchToolsTool(disclosure),
   ]
   for (const definition of residentToolDefinitions) ctx.tools.register(definition)
-
-  installAgentToolDisclosure(ctx, { webSearchDefinition })
   registerToolDiscoveryGuidance(ctx)
   installWebConfigBridge(ctx)
 }

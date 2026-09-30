@@ -94,7 +94,7 @@ try {
   assert.equal(before.base.searchApi.model, 'grok-4.20-beta')
   assert.equal(before.user?.searchApi?.model, undefined)
   const toolNames = ctx.tools.schemas().map(schema => schema.name)
-  assert.deepEqual(toolNames, ['docs_search', 'web_extract', 'search_tools', 'search_call'])
+  assert.deepEqual(toolNames, ['docs_search', 'web_extract', 'search_tools'])
   const patched = await fetch(endpoint, {
     method: 'PATCH',
     headers: { origin, 'content-type': 'application/json' },

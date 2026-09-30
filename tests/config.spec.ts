@@ -72,11 +72,6 @@ describe('stage 0 configuration contract', () => {
       sourceStoreMaxRecords: 100_000,
     })
     expect(config.toolDiscovery).toEqual({ mode: 'progressive' })
-    expect(config.optionalTools).toEqual({
-      webMap: false,
-      researchPlan: false,
-      diagnostics: false,
-    })
     expect(config.diagnostics).toEqual({
       timeoutMs: 30_000,
       maxProbeAttempts: 1,
@@ -93,16 +88,6 @@ describe('stage 0 configuration contract', () => {
       maxUrlCharacters: 8192,
       maxInstructionsCharacters: 10_000,
       maxLinks: 500,
-    })
-    expect(config.researchPlan).toEqual({
-      maxQuestionCharacters: 32_000,
-      maxSubQueryCharacters: 10_000,
-      maxQueryCharacters: 10_000,
-      maxReasonCharacters: 10_000,
-      maxKnownUrlCharacters: 8192,
-      maxKnownUrls: 10,
-      maxOutputBytes: 256 * 1024,
-      modelTextMaxBytes: 64 * 1024,
     })
     expect(config.webExtract.smartDirect).toEqual({
       browser: 'chrome_145',
@@ -157,9 +142,6 @@ describe('stage 0 configuration contract', () => {
     [{ retention: { docsSearchMaxResults: 5 } }, 'docs_search cap below its default'],
     [{ retention: { docsSearchMaxResults: 21 } }, 'docs_search cap above the schema maximum'],
     [{ toolDiscovery: { mode: 'dynamic' } }, 'tool-discovery mode enum'],
-    [{ optionalTools: { webMap: 'yes' } }, 'deprecated boolean compatibility input'],
-    [{ optionalTools: { researchPlan: 'yes' } }, 'deprecated research-plan compatibility input'],
-    [{ optionalTools: { diagnostics: 'yes' } }, 'deprecated diagnostics compatibility input'],
     [{ diagnostics: { timeoutMs: 0 } }, 'positive diagnostics timeout'],
     [{ diagnostics: { maxProbeAttempts: 0 } }, 'positive diagnostics attempts'],
     [{ diagnostics: { maxProbeAttempts: 4 } }, 'diagnostics attempt hard cap'],
@@ -167,15 +149,6 @@ describe('stage 0 configuration contract', () => {
     [{ diagnostics: { maxResultBytes: 0 } }, 'positive diagnostics result bytes'],
     [{ diagnostics: { maxOutputBytes: 16 * 1024 - 1 } }, 'diagnostics envelope minimum'],
     [{ diagnostics: { modelTextMaxBytes: 0 } }, 'positive diagnostics model text bytes'],
-    [{ researchPlan: { maxQuestionCharacters: 0 } }, 'positive research question limit'],
-    [{ researchPlan: { maxSubQueryCharacters: 0 } }, 'positive research sub-query limit'],
-    [{ researchPlan: { maxQueryCharacters: 0 } }, 'positive research query limit'],
-    [{ researchPlan: { maxReasonCharacters: 0 } }, 'positive research reason limit'],
-    [{ researchPlan: { maxKnownUrlCharacters: 0 } }, 'positive research URL limit'],
-    [{ researchPlan: { maxKnownUrls: 0 } }, 'positive research URL count'],
-    [{ researchPlan: { maxKnownUrls: 11 } }, 'research URL count hard limit'],
-    [{ researchPlan: { maxOutputBytes: 0 } }, 'positive research canonical bytes'],
-    [{ researchPlan: { modelTextMaxBytes: 0 } }, 'positive research model text bytes'],
     [{ siteMap: { timeoutMs: 9999 } }, 'Tavily Map timeout below API minimum'],
     [{ siteMap: { timeoutMs: 10_500 } }, 'Tavily Map timeout with fractional seconds'],
     [{ siteMap: { maxResponseBytes: 0 } }, 'positive Tavily Map response bytes'],
@@ -263,26 +236,12 @@ describe('stage 0 configuration contract', () => {
         timeoutMs: 10_000,
         maxLinks: 25,
       },
-      researchPlan: {
-        maxQuestionCharacters: 12,
-        maxSubQueryCharacters: 13,
-        maxQueryCharacters: 14,
-        maxReasonCharacters: 15,
-        maxKnownUrlCharacters: 16,
-        maxKnownUrls: 2,
-        maxOutputBytes: 17_000,
-        modelTextMaxBytes: 18_000,
-      },
       toolDiscovery: {
         mode: 'all',
       },
       webExtract: {
         smartDirect: { proxyUrl: 'http://127.0.0.1:7890' },
         direct: { proxyUrl: 'http://127.0.0.1:7891/' },
-      },
-      optionalTools: {
-        webMap: true,
-        diagnostics: true,
       },
       diagnostics: {
         timeoutMs: 10_000,
@@ -301,24 +260,9 @@ describe('stage 0 configuration contract', () => {
       timeoutMs: 10_000,
       maxLinks: 25,
     })
-    expect(config.researchPlan).toEqual({
-      maxQuestionCharacters: 12,
-      maxSubQueryCharacters: 13,
-      maxQueryCharacters: 14,
-      maxReasonCharacters: 15,
-      maxKnownUrlCharacters: 16,
-      maxKnownUrls: 2,
-      maxOutputBytes: 17_000,
-      modelTextMaxBytes: 18_000,
-    })
     expect(config.toolDiscovery).toEqual({ mode: 'all' })
     expect(config.webExtract.smartDirect.proxyUrl).toBe('http://127.0.0.1:7890')
     expect(config.webExtract.direct.proxyUrl).toBe('http://127.0.0.1:7891/')
-    expect(config.optionalTools).toEqual({
-      webMap: true,
-      researchPlan: false,
-      diagnostics: true,
-    })
     expect(config.diagnostics).toEqual({
       timeoutMs: 10_000,
       maxProbeAttempts: 2,

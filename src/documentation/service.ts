@@ -500,8 +500,7 @@ declare module '@deepseek-ai/cordis' {
 }
 
 /**
- * Lifecycle-bound documentation core shared by the high-level docs Consumer
- * and the deferred granular Context7 Consumers.
+ * Lifecycle-bound documentation core for docs_search and its internal Context7 integration.
  */
 export class DocumentationSearchService extends Service {
   private readonly context7: DocumentationSearchDependencies['context7']

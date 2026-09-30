@@ -4,7 +4,7 @@ English | [简体中文](README.zh.md)
 
 `dsh-search-enhance` is a search extension for DeepSeek Harness. It uses a Grok-compatible Search API for primary web answers and can optionally use Context7, Exa, Tavily, and Firecrawl for documentation lookup, supplementary discovery, page extraction, and site mapping.
 
-The plugin handles search, source retention, and page retrieval as separate steps. `web_search` and `docs_search` return an answer or documentation snippets with visible sources; the complete source record can be stored under a `source_ref` and paged later. Important pages can then be retrieved with `web_extract`, so search snippets remain distinct from fetched page content.
+The plugin presents search results, sources, and page content separately. Searches return an answer or documentation snippets with source links; you can ask for more sources when needed. To check important details, ask it to read the original page. Search snippets remain distinct from fetched page content.
 
 > Bring your own endpoints and credentials. The plugin ships no API keys. A Grok-compatible endpoint is required for `web_search`; Context7, Exa, Tavily, and Firecrawl are optional.
 
@@ -17,16 +17,16 @@ The plugin handles search, source retention, and page retrieval as separate step
 - `source_ref` keeps the complete source record in private durable storage, allowing the Agent to paginate beyond the links included in the initial result.
 - `docs_search` uses Context7 only with an explicit `library_name` or `library_id`; requests without a library identity use Exa discovery.
 - `web_extract` requires one explicit `provider` from the user-enabled set: `tavily_extract`, `firecrawl_scrape`, `smart_direct`, or `direct`. It reports the route, evidence level, and available page metadata; failures never switch Providers.
-- Source pagination, Context7 detail operations, site mapping, research planning, and diagnostics are disclosed on demand through `search_tools` and `search_call`.
+- Ask for more sources or related pages on a specific website when needed; no manual tool loading is required.
 - Supplemental search defaults to no Providers selected. Unselected Providers are never requested; missing credentials and failures of selected Providers remain visible as warnings.
 
-For the complete routing, evidence, and progressive-disclosure flow, see [Search workflow architecture](https://github.com/umineko987/dsh-search-enhance/blob/main/guides/search-workflow.md).
+For implementation details, see [Search workflow architecture](https://github.com/umineko987/dsh-search-enhance/blob/main/guides/search-workflow.md).
 
 ## Quick start
 
 ### 1. Install
 
-Supports DSH `0.1.7-rc.2`. DSH dependencies are pinned to this exact release.
+Supports DSH `0.2.0-rc.2`. DSH dependencies are pinned to this exact release; upgrade the DSH CLI first if you are running an older version.
 
 Install the [published npm bundle](https://www.npmjs.com/package/dsh-search-enhance) into the DSH `web` profile:
 
@@ -73,7 +73,7 @@ Use normal language; the plugin gives the Agent routing guidance.
 - “Look up the current FastAPI JWT authentication API and show a minimal example from the official documentation.”
 - “Read and summarize `https://example.com/article`, separating what the page states from your inference.”
 
-Ask explicitly when you need complete source pagination, site discovery, a research plan, or Provider diagnostics.
+Ask explicitly when you need more sources or pages from a specific website. Check the plugin settings for service configuration status.
 
 ## Providers
 
@@ -93,13 +93,13 @@ Separately, select the **extraction Providers** available to the Agent. Each `we
 
 For `docs_search`, Context7 requires an explicit `library_name` or `library_id`. Without one, `provider: "auto"` uses Exa instead of guessing a package name from the full question.
 
-## Tool disclosure
+## On-demand features
 
-The model-facing surface has five tools: `web_search`, `docs_search`, `web_extract`, `search_tools`, and `search_call`. Advanced operations are disclosed through manifests rather than registered as additional model tools.
+To see more sources from a search, ask: “Show me the other sources from this search.”
 
-The default `progressive` mode activates a newly disclosed capability on the next model step. In `all` mode, deferred operations are active immediately. Native Tool Mode and Code Mode use the same schemas, execution policy, and canonical outputs.
+To find relevant pages on a website, ask: “Find pages about authentication on this website.” This feature requires Tavily to be configured.
 
-When `web_search` or `docs_search` returns a `source_ref`, the plugin automatically activates source pagination and appends its real operation manifest.
+The assistant uses these features when needed. You do not have to call tools manually or switch modes. To verify an important claim, you can then ask it to read the original pages.
 
 ## Update and uninstall
 

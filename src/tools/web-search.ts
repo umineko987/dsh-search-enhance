@@ -38,8 +38,6 @@ export interface WebSearchToolDependencies {
   readonly getConfig: () => Config
   readonly orchestrator: Pick<SearchOrchestrator, 'search'>
   readonly operations: ForegroundOperationScope
-  /** Immutable append-only manifest text for source_ref auto-disclosure. */
-  readonly sourceOperationNotice: string
   readonly sources: Pick<SearchEnhanceSourceService, 'record'>
 }
 
@@ -242,7 +240,7 @@ export function createWebSearchTool(
       schema: WEB_SEARCH_OUTPUT_SCHEMA,
       render: (_args, value) => [{
         type: 'text',
-        text: renderWebSearchText(value, dependencies.sourceOperationNotice),
+        text: renderWebSearchText(value),
       }],
       presentationMeta: webSearchPresentationMeta,
     },

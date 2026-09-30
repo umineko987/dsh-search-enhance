@@ -46,8 +46,6 @@ export interface DocsSearchToolDependencies {
   readonly getConfig: () => Config
   readonly documentation: Pick<DocumentationSearchService, 'search'>
   readonly operations: ForegroundOperationScope
-  /** Immutable append-only manifest text for source_ref auto-disclosure. */
-  readonly sourceOperationNotice: string
   readonly sources: Pick<SearchEnhanceSourceService, 'record'>
 }
 
@@ -284,7 +282,7 @@ async function executeDocsSearch(
   return projectDocsSearchOutput(result, config, commit)
 }
 
-/** Build the resident high-level documentation Consumer; granular Context7 tools are deferred. */
+/** Build the resident high-level documentation tool, including Context7 library resolution. */
 export function createDocsSearchTool(
   dependencies: DocsSearchToolDependencies,
 ): ToolDefinition {
@@ -296,7 +294,7 @@ export function createDocsSearchTool(
       schema: DOCS_SEARCH_OUTPUT_SCHEMA,
       render: (_args, value) => [{
         type: 'text',
-        text: renderDocsSearchText(value, dependencies.sourceOperationNotice),
+        text: renderDocsSearchText(value),
       }],
       presentationMeta: docsSearchPresentationMeta,
     },

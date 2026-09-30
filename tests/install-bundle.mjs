@@ -169,8 +169,8 @@ const dshVersion = await run('dsh', ['--version'], {
   env: process.env,
   label: 'dsh --version',
 })
-if (dshVersion.stdout.trim() !== '0.1.7-rc.2') {
-  process.stdout.write(`bundle install acceptance: skipped (requires dsh 0.1.7-rc.2; found ${dshVersion.stdout.trim()})\n`)
+if (dshVersion.stdout.trim() !== '0.2.0-rc.2') {
+  process.stdout.write(`bundle install acceptance: skipped (requires dsh 0.2.0-rc.2; found ${dshVersion.stdout.trim()})\n`)
   process.exit(0)
 }
 

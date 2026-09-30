@@ -4,7 +4,7 @@
 
 `dsh-search-enhance` 是 DeepSeek Harness 的搜索增强插件。它使用 Grok-compatible Search API 生成普通网页搜索的主要回答，并可选用 Context7、Exa、Tavily 和 Firecrawl 完成文档检索、补充来源、网页正文提取和站点页面发现。
 
-插件将搜索、来源保留和页面读取作为不同步骤处理。`web_search` 和 `docs_search` 返回搜索回答或文档片段以及可见来源；完整来源记录可通过 `source_ref` 保存并继续分页读取；需要核对重要内容时，再由 `web_extract` 获取选中页面。因此，搜索 snippet 与实际读取的网页正文会保持明确区分。
+插件将搜索结果、参考来源和网页正文分开呈现。搜索时先给出回答或文档片段及来源链接，需要更多来源时可以继续追问；核对重要内容时，再要求读取原网页。搜索摘要与实际读取的正文会明确区分。
 
 > 你需要自行提供所选服务的端点和凭据，插件不内置任何 API Key。`web_search` 需要 Grok-compatible 端点；Context7、Exa、Tavily 和 Firecrawl 均为可选 Provider。
 
@@ -17,16 +17,16 @@
 - `source_ref` 将完整来源记录保存在插件私有持久存储中，Agent 可以继续分页读取首次结果未展示的来源。
 - `docs_search` 只在提供明确 `library_name` 或 `library_id` 时使用 Context7；没有库身份的请求使用 Exa 发现。
 - `web_extract` 每次必须通过 `provider` 指定一家用户已启用的服务：`tavily_extract`、`firecrawl_scrape`、`smart_direct` 或 `direct`。结果报告提取路径、证据等级和页面元数据，失败不自动换服务。
-- 来源分页、Context7 精细操作、站点映射、研究计划和诊断通过 `search_tools` 与 `search_call` 按需披露。
+- 需要时可继续查看更多来源，或查找某个网站下的相关页面，无需手动加载工具。
 - 补充搜索默认不选择任何 Provider。未选中的服务不会被请求；选中服务缺少凭据或执行失败会在结果中显示警告。
 
-完整的路由、证据处理和渐进披露流程见[搜索链路架构](https://github.com/umineko987/dsh-search-enhance/blob/main/guides/search-workflow.zh.md)。
+实现细节见[搜索链路架构](https://github.com/umineko987/dsh-search-enhance/blob/main/guides/search-workflow.zh.md)。
 
 ## 快速开始
 
 ### 1. 安装
 
-支持 DSH `0.1.7-rc.2`，DSH 依赖精确锁定到该版本。
+支持 DSH `0.2.0-rc.2`，DSH 依赖精确锁定到该版本；使用旧版本时，请先升级 DSH CLI。
 
 将 [npm 上发布的 bundle](https://www.npmjs.com/package/dsh-search-enhance) 安装到 DSH `web` profile：
 
@@ -73,7 +73,7 @@ dsh web
 - “查找 FastAPI 当前 JWT 认证 API，并根据官方文档给出最小示例。”
 - “读取并总结 `https://example.com/article`，区分页面原文与推断。”
 
-需要完整来源分页、站点发现、研究计划或 Provider 诊断时，请明确提出。
+需要更多参考来源或网站内的相关页面时，可以继续追问；服务配置状态可在插件设置中查看。
 
 ## Provider
 
@@ -93,13 +93,13 @@ dsh web
 
 对于 `docs_search`，Context7 需要明确的 `library_name` 或 `library_id`。两者都未提供时，`provider: "auto"` 使用 Exa，不会根据完整问题猜测包名。
 
-## 工具披露
+## 按需功能
 
-模型可见入口始终是五个工具：`web_search`、`docs_search`、`web_extract`、`search_tools` 和 `search_call`。高级 operation 通过 manifest 披露，不会注册成更多模型工具。
+想查看更多搜索来源时，可以直接追问：“把这次搜索的其他来源也列出来。”
 
-默认 `progressive` 模式下，新披露的能力从下一模型 step 开始可调用。`all` 模式让延迟 operation 立即处于 active 状态。Native Tool Mode 与 Code Mode 使用相同 schema、执行策略和规范输出。
+想查找某个网站下的相关页面时，可以提出：“查找这个网站下与认证有关的页面。”该功能需要先配置 Tavily。
 
-`web_search` 或 `docs_search` 返回 `source_ref` 时，插件会自动激活来源分页，并追加对应的真实 operation manifest。
+助手会按需使用这些功能，你不必手动调用工具或切换模式。核对重要结论时，还可以继续要求读取原网页。
 
 ## 更新与卸载
 

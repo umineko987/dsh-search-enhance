@@ -4,8 +4,6 @@ import type {
   DocsSearchWarning,
   WebSearchOutput,
   WebSearchWarning,
-  SearchDiagnosticsOutput,
-  SearchDiagnosticsWarning,
   SearchSourcesFound,
   SearchSourcesOutput,
   WebExtractOutput,
@@ -24,43 +22,19 @@ export function sourceDisplayLabel(source: { readonly title?: string; readonly u
   if (source.title !== undefined && source.title.trim().length > 0) return source.title
   return new URL(source.url).hostname
 }
-function renderWithBoundedNotice(
-  text: string,
-  notice: string | undefined,
-  maximumBytes: number,
-  fallbackNotice?: string,
-): string {
-  if (notice === undefined || notice.length === 0) {
-    return truncateUtf8(text, maximumBytes).text
-  }
+
+function renderWithBoundedNotice(text: string, notice: string | undefined, maximumBytes: number): string {
+  if (notice === undefined) return truncateUtf8(text, maximumBytes).text
   const separator = '\n\n'
-  const complete = `${text}${separator}${notice}`
-  if (utf8ByteLength(complete) <= maximumBytes) return complete
-  const noticeBytes = utf8ByteLength(notice)
-  if (noticeBytes > maximumBytes) {
-    // Never expose a partial JSON capability manifest. A short plain-text
-    // fallback can still point the model at the durable source reference.
-    return truncateUtf8(fallbackNotice ?? notice, maximumBytes).text
-  }
-  const prefixBudget = maximumBytes - noticeBytes - utf8ByteLength(separator)
-  if (prefixBudget <= 0) return notice
+  const prefixBudget = maximumBytes - utf8ByteLength(notice) - utf8ByteLength(separator)
+  if (prefixBudget <= 0) return truncateUtf8(notice, maximumBytes).text
   const prefix = truncateUtf8(text, prefixBudget).text
   return prefix.length === 0 ? notice : `${prefix}${separator}${notice}`
 }
 
-function sourceDisclosureTail(
-  sourceRef: string | undefined,
-  operationNotice: string | undefined,
-): string | undefined {
+function sourceLoadingNotice(sourceRef: string | undefined): string | undefined {
   if (sourceRef === undefined) return undefined
-  return [
-    `Source reference: ${sourceRef}`,
-    operationNotice,
-  ].filter((line): line is string => line !== undefined && line.length > 0).join('\n\n')
-}
-
-function sourceDisclosureFallback(sourceRef: string): string {
-  return `Source reference: ${sourceRef}\n\nCall search_tools({ capabilities: ["sources"] }) to retrieve the search_sources manifest.`
+  return `Source reference: ${sourceRef}\n\nFor more sources, call search_tools({ capabilities: ["sources"] }), then call search_sources directly on the next step.`
 }
 
 function warningText(warning: WebSearchWarning): string {
@@ -141,7 +115,6 @@ export function renderWebSearchLimitations(value: WebSearchOutput): string | und
  */
 export function renderWebSearchText(
   value: WebSearchOutput,
-  sourceOperationNotice?: string,
 ): string {
   const sections = [
     renderWebSearchLimitations(value),
@@ -157,9 +130,8 @@ export function renderWebSearchText(
     : 0
   return renderWithBoundedNotice(
     complete,
-    sourceDisclosureTail(value.source_ref, sourceOperationNotice),
+    sourceLoadingNotice(value.source_ref),
     maximumBytes,
-    value.source_ref === undefined ? undefined : sourceDisclosureFallback(value.source_ref),
   )
 }
 
@@ -242,7 +214,6 @@ function docsSourceSection(value: DocsSearchOutput): string | undefined {
 /** Pure Native projection for docs_search; it never reads Settings, cache, storage, or the network. */
 export function renderDocsSearchText(
   value: DocsSearchOutput,
-  sourceOperationNotice?: string,
 ): string {
   const status = value.state === 'partial' ? 'partial' : 'complete'
   const explanation = value.state === 'partial'
@@ -282,9 +253,8 @@ export function renderDocsSearchText(
     : 0
   return renderWithBoundedNotice(
     complete,
-    sourceDisclosureTail(value.source_ref, sourceOperationNotice),
+    sourceLoadingNotice(value.source_ref),
     maximumBytes,
-    value.source_ref === undefined ? undefined : sourceDisclosureFallback(value.source_ref),
   )
 }
 
@@ -547,103 +517,3 @@ export function renderWebMapText(value: WebMapOutput): string {
   }
   return truncateUtf8(marker, maximumBytes).text
 }
-
-function diagnosticsWarningText(warning: SearchDiagnosticsWarning): string {
-  const count = warning.count === undefined ? '' : ` (${warning.count})`
-  switch (warning.code) {
-    case 'not_configured':
-      return `Provider credentials are not configured${count}.`
-    case 'probe_failed':
-      return `Bounded Provider probes failed${count}.`
-    case 'unsupported':
-      return `Configured routes have no compliant network probe${count}.`
-    case 'configuration_unavailable':
-      return `Credential configuration status was unavailable${count}.`
-    case 'bounded':
-      return `The canonical diagnostics limitations list was bounded${count}.`
-  }
-}
-
-function completeSearchDiagnosticsText(value: SearchDiagnosticsOutput): string {
-  const capabilities = [
-    'Capability availability (configuration only)',
-    ...value.capability_status.map(status => [
-      `- ${status.capability}: available=${status.available}, required=${status.required}`,
-      `providers=${status.providers.map(provider => `${provider.provider}:${provider.state}`).join(', ')}`,
-    ].join(', ')),
-  ].join('\n')
-  const attempts = value.tested
-    ? [
-        'This-test Provider outcomes',
-        ...value.provider_attempts.map(attempt => [
-          `- ${attempt.capability}/${attempt.provider}: outcome=${attempt.outcome}`,
-          `attempts=${attempt.attempts}`,
-          `duration_ms=${attempt.duration_ms}`,
-          ...(attempt.error_kind === undefined ? [] : [`error_kind=${attempt.error_kind}`]),
-        ].join(', ')),
-      ].join('\n')
-    : 'This-test Provider outcomes\nNo network probes were run by show.'
-  const configuration = [
-    'Safe configuration status',
-    `Default profile/depth: ${value.configuration.default_profile}/${value.configuration.default_depth}`,
-    `Search API protocol: ${value.configuration.search_api_protocol}`,
-    `Search model configured: ${value.configuration.search_model_configured}`,
-    `Thinking/fallback: ${value.configuration.thinking_level}/${value.configuration.fallback_mode}`,
-    `Configured deferred operations: web_map=${value.configuration.web_map_enabled}, research_plan=${value.configuration.research_plan_enabled}, diagnostics=${value.configuration.diagnostics_enabled} (invoke active operations through search_call)`,
-    `Search routes enabled: tavily=${value.configuration.tavily_search_enabled}, firecrawl=${value.configuration.firecrawl_search_enabled}`,
-    `Extract routes enabled: tavily=${value.configuration.tavily_extract_enabled}, firecrawl=${value.configuration.firecrawl_scrape_enabled}, smart_direct=${value.configuration.smart_direct_enabled}, direct=${value.configuration.direct_enabled}`,
-  ].join('\n')
-  return [
-    [
-      'Search diagnostics',
-      `Action: ${value.action}`,
-      `Live probes run: ${value.tested ? 'yes' : 'no'}`,
-      `Minimum profile: ${value.minimum_profile.profile} (satisfied=${value.minimum_profile.satisfied})`,
-      `Product fallback used by diagnostics: ${value.fallback_used}`,
-    ].join('\n'),
-    capabilities,
-    attempts,
-    configuration,
-    value.warnings.length === 0
-      ? 'Warnings\nNone.'
-      : ['Warnings', ...value.warnings.map(item => `- ${diagnosticsWarningText(item)}`)].join('\n'),
-    value.limitations.length === 0
-      ? 'Limitations\nNone retained.'
-      : ['Limitations', ...value.limitations.map(item => `- ${inline(item)}`)].join('\n'),
-    ...(value.canonical_output_truncated
-      ? ['Canonical output was truncated to its configured JSON byte ceiling.']
-      : []),
-  ].join('\n\n')
-}
-
-/** Pure calculation shared by Native rendering and replayable diagnostics metadata. */
-export function isSearchDiagnosticsModelTextTruncated(value: SearchDiagnosticsOutput): boolean {
-  const maximumBytes = Number.isSafeInteger(value.model_text_max_bytes)
-    && value.model_text_max_bytes > 0
-    ? value.model_text_max_bytes
-    : 0
-  return utf8ByteLength(completeSearchDiagnosticsText(value)) > maximumBytes
-}
-
-/** Pure UTF-8-bounded model text that separates configured availability from live test outcomes. */
-export function renderSearchDiagnosticsText(value: SearchDiagnosticsOutput): string {
-  const complete = completeSearchDiagnosticsText(value)
-  const maximumBytes = Number.isSafeInteger(value.model_text_max_bytes)
-    && value.model_text_max_bytes > 0
-    ? value.model_text_max_bytes
-    : 0
-  if (utf8ByteLength(complete) <= maximumBytes) return complete
-
-  const marker = '[Model text truncated by model_text_max_bytes.]'
-  const suffix = `\n\n${marker}`
-  if (utf8ByteLength(suffix) <= maximumBytes) {
-    const prefix = truncateUtf8(complete, maximumBytes - utf8ByteLength(suffix)).text
-    return `${prefix}${suffix}`
-  }
-  return truncateUtf8(marker, maximumBytes).text
-}
-
-export {
-  isResearchPlanModelTextTruncated,
-  renderResearchPlanText,
-} from '../research-plan/index.js'

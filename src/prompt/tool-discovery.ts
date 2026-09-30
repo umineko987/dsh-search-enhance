@@ -1,15 +1,14 @@
 import type { Context } from '@deepseek-ai/cordis'
 
 export const TOOL_DISCOVERY_GUIDANCE = [
-  'Search Enhance keeps a fixed model-facing surface: web_search, docs_search, web_extract, search_tools, and search_call.',
-  'For docs_search, pass library_id when an exact /org/project id is known, or pass library_name directly when the package or product is known; for example docs_search({ query: "JWT authentication middleware API", library_name: "FastAPI" }). Do not activate granular Context7 merely to resolve first.',
+  'Search Enhance keeps web_search, docs_search, web_extract, and search_tools resident. Optional real tools search_sources and web_map can be loaded per Agent.',
+  'For docs_search, pass library_id when an exact /org/project id is known, or library_name when the package/product is known; for example docs_search({ query: "JWT authentication middleware API", library_name: "FastAPI" }). Library resolution is handled internally.',
   'For broad, cross-project, or unknown-library documentation discovery, use docs_search with provider: "auto" and no library identity; this uses Exa instead of guessing a Context7 library.',
   'For webpage bodies (articles, blogs, repository READMEs, and model cards), prefer web_extract with exactly one explicitly selected enabled Provider. Use the host web_fetch, when available, for raw JSON APIs, XML/Atom feeds, or other structured responses.',
   'Use HTTPS URLs directly when available. HTTP 200 with only a title or an app shell is not usable page-body evidence; choose a suitable enabled extraction Provider explicitly rather than repeatedly fetching the same shell. Do not bypass URL safety checks.',
-  'Use search_tools only when the resident search tools cannot complete the task. It returns append-only capability and operation manifests; do not activate every capability preemptively.',
-  'Run a manifested deferred operation with search_call({ operation, arguments }). In progressive mode, a newly disclosed capability is callable on the next model step; in all mode, deferred operations are active immediately. search_call fails closed while an operation is inactive.',
-  'Activate planning only for explicit deep research, multi-source verification, or complex comparison. Activate diagnostics only when the user asks about Provider configuration or connectivity.',
-  'A successful web_search or docs_search result with source_ref activates the sources capability. Use the appended search_sources manifest, or call search_tools for sources to replay that manifest before search_call.',
+  'Use search_tools({ capabilities: ["sources"] }) only when a source_ref needs pagination, or search_tools({ capabilities: ["site_map"] }) to discover URLs under a known website. Do not load optional tools preemptively.',
+  'Newly loaded tools become available on the next model step. Call search_sources or web_map directly using the tool definitions supplied by the host; already loaded tools stay available.',
+  'Search source metadata and mapped URLs are discovery, not verified webpage-body evidence.',
 ].join('\n')
 
 export const EVIDENCE_DISCIPLINE_GUIDANCE = [
