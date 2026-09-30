@@ -101,6 +101,10 @@ function probeConfig(config: Config): Config {
         ...config.providers.firecrawl,
         timeoutMs: Math.min(config.providers.firecrawl.timeoutMs, timeoutMs),
       },
+      parallel: {
+        ...config.providers.parallel,
+        timeoutMs: Math.min(config.providers.parallel.timeoutMs, timeoutMs),
+      },
     },
     retry: {
       ...config.retry,

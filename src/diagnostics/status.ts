@@ -72,6 +72,7 @@ async function credentialStates(
     config.providers.exa.credentialRef,
     config.providers.tavily.credentialRef,
     config.providers.firecrawl.credentialRef,
+    config.providers.parallel.credentialRef,
   ]
   const unique = [...new Map(refs.map(ref => [String(ref), ref])).values()]
   const settled = await Promise.all(unique.map(async ref => [
@@ -127,6 +128,7 @@ export async function inspectDiagnosticStatus(
   const exaCredential = stateFor(states, config.providers.exa.credentialRef)
   const tavilyCredential = stateFor(states, config.providers.tavily.credentialRef)
   const firecrawlCredential = stateFor(states, config.providers.firecrawl.credentialRef)
+  const parallelCredential = stateFor(states, config.providers.parallel.credentialRef)
   const standard = config.minimumProfile === 'standard'
 
   const mainProviders = Object.freeze([
@@ -134,6 +136,7 @@ export async function inspectDiagnosticStatus(
     freezeProviderStatus('exa', routeState(config.supplementalSearch.exa, exaCredential)),
     freezeProviderStatus('tavily_search', routeState(config.supplementalSearch.tavily, tavilyCredential)),
     freezeProviderStatus('firecrawl_search', routeState(config.supplementalSearch.firecrawl, firecrawlCredential)),
+    freezeProviderStatus('parallel_search', routeState(config.supplementalSearch.parallel, parallelCredential)),
   ])
   const docsProviders = Object.freeze([
     freezeProviderStatus('context7', optionalAuthState(context7Credential)),
@@ -155,6 +158,10 @@ export async function inspectDiagnosticStatus(
     freezeProviderStatus(
       'direct',
       config.webExtract.direct.enabled ? 'configured' : 'disabled',
+    ),
+    freezeProviderStatus(
+      'parallel_extract',
+      routeState(config.webExtract.parallel.enabled, parallelCredential),
     ),
   ])
   const mapProviders = Object.freeze([
@@ -206,6 +213,8 @@ export async function inspectDiagnosticStatus(
     firecrawlSearchEnabled: config.supplementalSearch.firecrawl,
     tavilyExtractEnabled: config.webExtract.tavily.enabled,
     firecrawlScrapeEnabled: config.webExtract.firecrawl.enabled,
+    parallelSearchEnabled: config.supplementalSearch.parallel,
+    parallelExtractEnabled: config.webExtract.parallel.enabled,
     smartDirectEnabled: config.webExtract.smartDirect.enabled,
     directEnabled: config.webExtract.direct.enabled,
   })

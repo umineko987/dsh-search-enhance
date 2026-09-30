@@ -292,7 +292,7 @@ describe('Search Enhance Web configuration Host bridge', () => {
   it('edits supplemental selections and extract allowlist independently with bounded limits', async () => {
     const harness = await createHarness()
     const snapshot = await (await fetch(`${harness.origin}${WEB_CONFIG_PATH}`)).json() as WebConfigSnapshot
-    expect(snapshot.value.supplementalSearch).toEqual({ exa: false, tavily: false, firecrawl: false, maxSourcesPerProvider: 5 })
+    expect(snapshot.value.supplementalSearch).toEqual({ exa: false, tavily: false, firecrawl: false, parallel: false, maxSourcesPerProvider: 5 })
     expect(snapshot.options.supplementalSearchMaxSources).toBe(SUPPLEMENTAL_SEARCH_MAX_SOURCES)
 
     const updated = await mutate(harness, {
@@ -300,18 +300,24 @@ describe('Search Enhance Web configuration Host bridge', () => {
       mutations: [
         { op: 'set', path: ['supplementalSearch', 'exa'], value: true },
         { op: 'set', path: ['supplementalSearch', 'tavily'], value: true },
+        { op: 'set', path: ['supplementalSearch', 'parallel'], value: true },
+        { op: 'set', path: ['providers', 'parallel', 'mode'], value: 'advanced' },
+        { op: 'set', path: ['webExtract', 'parallel', 'enabled'], value: true },
         { op: 'set', path: ['webExtract', 'tavily', 'enabled'], value: false },
       ],
     })
     const applied = await updated.json() as WebConfigSnapshot
     expect(updated.status).toBe(200)
-    expect(applied.value.supplementalSearch).toMatchObject({ exa: true, tavily: true, firecrawl: false })
+    expect(applied.value.supplementalSearch).toMatchObject({ exa: true, tavily: true, firecrawl: false, parallel: true })
+    expect(applied.value.providers.parallel.mode).toBe('advanced')
+    expect(applied.value.webExtract.parallel.enabled).toBe(true)
     expect(applied.value.webExtract.tavily.enabled).toBe(false)
-    expect(applied.user?.supplementalSearch).toEqual({ exa: true, tavily: true })
+    expect(applied.user?.supplementalSearch).toEqual({ exa: true, tavily: true, parallel: true })
 
     for (const mutation of [
       { op: 'set', path: ['supplementalSearch', 'maxSourcesPerProvider'], value: SUPPLEMENTAL_SEARCH_MAX_SOURCES + 1 },
       { op: 'set', path: ['supplementalSearch', 'exa'], value: 'yes' },
+      { op: 'set', path: ['providers', 'parallel', 'mode'], value: 'unsupported' },
     ]) {
       const rejected = await mutate(harness, { expectedRevision: 1, mutations: [mutation] })
       expect(rejected.status).toBe(422)

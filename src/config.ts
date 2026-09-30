@@ -73,7 +73,7 @@ export interface OutputBudget {
 export type ProfileBudgets = Record<SearchDepth, OutputBudget>
 export type SearchBudgets = Record<SearchProfile, ProfileBudgets>
 
-export const SUPPLEMENTAL_SEARCH_PROVIDERS = ['exa', 'tavily', 'firecrawl'] as const
+export const SUPPLEMENTAL_SEARCH_PROVIDERS = ['exa', 'tavily', 'firecrawl', 'parallel'] as const
 export type SupplementalSearchProvider = (typeof SUPPLEMENTAL_SEARCH_PROVIDERS)[number]
 export type SupplementalSearchConfig = Record<SupplementalSearchProvider, boolean> & {
   readonly maxSourcesPerProvider: number
@@ -85,6 +85,7 @@ export interface CredentialReferences {
   readonly exa: CredentialRef
   readonly tavily: CredentialRef
   readonly firecrawl: CredentialRef
+  readonly parallel: CredentialRef
 }
 
 export interface SearchApiConfig {
@@ -102,11 +103,19 @@ export interface DiscoveryProviderConfig {
   readonly timeoutMs: number
 }
 
+export const PARALLEL_SEARCH_MODES = ['turbo', 'fast', 'basic', 'advanced'] as const
+export type ParallelSearchMode = (typeof PARALLEL_SEARCH_MODES)[number]
+
+export interface ParallelProviderConfig extends DiscoveryProviderConfig {
+  readonly mode: ParallelSearchMode
+}
+
 export interface ProviderConfig {
   readonly context7: DiscoveryProviderConfig
   readonly exa: DiscoveryProviderConfig
   readonly tavily: DiscoveryProviderConfig
   readonly firecrawl: DiscoveryProviderConfig
+  readonly parallel: ParallelProviderConfig
 }
 
 export interface RetryConfig {
@@ -271,6 +280,7 @@ export interface WebExtractConfig {
   /** Independent remote route controls. */
   readonly tavily: RemoteExtractConfig
   readonly firecrawl: FirecrawlExtractConfig
+  readonly parallel: RemoteExtractConfig
   readonly smartDirect: SmartDirectConfig
   readonly direct: DirectFetchConfig
 }
@@ -336,6 +346,7 @@ export const DEFAULT_CREDENTIAL_REFS: CredentialReferences = Object.freeze({
   exa: credentialRef('EXA_API_KEY'),
   tavily: credentialRef('TAVILY_API_KEY'),
   firecrawl: credentialRef('FIRECRAWL_API_KEY'),
+  parallel: credentialRef('PARALLEL_API_KEY'),
 })
 
 export const DEFAULT_SEARCH_BUDGETS: SearchBudgets = {
@@ -475,6 +486,12 @@ export const Config: Schema<Config> = Schema.object({
     exa: discoveryProvider('https://api.exa.ai', DEFAULT_CREDENTIAL_REFS.exa),
     tavily: discoveryProvider('https://api.tavily.com', DEFAULT_CREDENTIAL_REFS.tavily),
     firecrawl: discoveryProvider('https://api.firecrawl.dev/v2', DEFAULT_CREDENTIAL_REFS.firecrawl),
+    parallel: Schema.object({
+      baseUrl: httpUrl('https://api.parallel.ai'),
+      credentialRef: credentialReference(DEFAULT_CREDENTIAL_REFS.parallel),
+      timeoutMs: positiveInteger(120_000, 600_000),
+      mode: Schema.union(PARALLEL_SEARCH_MODES).default('basic'),
+    }) as Schema<ParallelProviderConfig>,
   }),
   fallbackMode: Schema.union(['auto', 'off'] as const).default('auto'),
   minimumProfile: Schema.union(['standard', 'off'] as const).default('standard'),
@@ -499,6 +516,7 @@ export const Config: Schema<Config> = Schema.object({
     exa: Schema.boolean().default(false),
     tavily: Schema.boolean().default(false),
     firecrawl: Schema.boolean().default(false),
+    parallel: Schema.boolean().default(false),
     maxSourcesPerProvider: positiveInteger(5, SUPPLEMENTAL_SEARCH_MAX_SOURCES),
   }),
   retention: Schema.object({
@@ -569,6 +587,12 @@ export const Config: Schema<Config> = Schema.object({
       maxEmptyAttempts: positiveInteger(3, 10),
       waitForBaseMs: nonNegativeInteger(1500, 30_000),
     }) as Schema<FirecrawlExtractConfig>,
+    parallel: Schema.object({
+      enabled: Schema.boolean().default(false),
+      timeoutMs: positiveInteger(120_000, 600_000),
+      maxResponseBytes: positiveInteger(2 * 1024 * 1024, 32 * 1024 * 1024),
+      maxContentCharacters: positiveInteger(50_000, 1_000_000),
+    }) as Schema<RemoteExtractConfig>,
     smartDirect: Schema.object({
       enabled: Schema.boolean().default(true),
       proxyUrl: proxyUrl(),

@@ -322,6 +322,8 @@ function webExtractPathLimitation(value: WebExtractOutput): string {
     case 'tavily_extract':
     case 'firecrawl_scrape':
       return 'Path limitation: third-party extracted content may be abridged or reordered; no target HTTP status is inferred when the Provider did not supply one.'
+    case 'parallel_extract':
+      return 'Path limitation: third-party Markdown extraction may be abridged or reordered and may use indexed content up to 10 minutes old; no raw HTTP response or target status is inferred.'
     case 'smart_direct':
       return 'Path limitation: the host made a fingerprinted static HTTP request, but Defuddle may select, abridge, or reorder content; no JavaScript or login session was used.'
     case 'direct':

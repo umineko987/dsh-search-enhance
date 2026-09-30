@@ -521,6 +521,7 @@ describe('DirectFetchProvider redirects, formats, and adapter integration', () =
     const orchestrator = new WebExtractOrchestrator({
       tavilyExtract: stubAdapter('tavily_extract', { state: 'not_configured' }),
       firecrawlScrape: stubAdapter('firecrawl_scrape', { state: 'not_configured' }),
+      parallelExtract: stubAdapter('parallel_extract', { state: 'not_configured' }),
       smartDirect: stubAdapter('smart_direct', { state: 'not_configured' }),
       direct: new DirectFetchProvider(),
       getConfig: () => config,
@@ -546,6 +547,7 @@ describe('DirectFetchProvider redirects, formats, and adapter integration', () =
     })
     const config = testConfig()
     const orchestrator = new WebExtractOrchestrator({
+      parallelExtract: stubAdapter('parallel_extract', { state: 'not_configured' }),
       tavilyExtract: stubAdapter('tavily_extract', { state: 'not_configured' }),
       firecrawlScrape: stubAdapter('firecrawl_scrape', async () => {
         throw new ProviderError({
@@ -592,6 +594,7 @@ describe('DirectFetchProvider redirects, formats, and adapter integration', () =
     const orchestrator = new WebExtractOrchestrator({
       tavilyExtract: fail('tavily_extract'),
       firecrawlScrape: fail('firecrawl_scrape'),
+      parallelExtract: fail('parallel_extract'),
       smartDirect: fail('smart_direct'),
       direct: new DirectFetchProvider(),
       getConfig: () => config,
@@ -635,6 +638,7 @@ describe('DirectFetchProvider redirects, formats, and adapter integration', () =
         state: 'complete',
       }),
       firecrawlScrape: unavailable('firecrawl_scrape'),
+      parallelExtract: unavailable('parallel_extract'),
       smartDirect: unavailable('smart_direct'),
       direct,
       getConfig: () => config,

@@ -72,7 +72,7 @@ function snapshot(overrides: Partial<WebConfigSnapshot> = {}): WebConfigSnapshot
       defaultDepth: 'compact',
       toolTimeoutMs: 180_000,
       toolDiscovery: { mode: 'progressive' },
-      supplementalSearch: { exa: false, tavily: false, firecrawl: false, maxSourcesPerProvider: 5 },
+      supplementalSearch: { exa: false, tavily: false, firecrawl: false, parallel: false, maxSourcesPerProvider: 5 },
       searchApi: {
         baseUrl: 'https://grok-gateway.example/v1',
         protocol: 'completions',
@@ -86,10 +86,12 @@ function snapshot(overrides: Partial<WebConfigSnapshot> = {}): WebConfigSnapshot
         exa: { baseUrl: 'https://api.exa.ai', credentialRef: 'EXA_API_KEY', timeoutMs: 120_000 },
         tavily: { baseUrl: 'https://api.tavily.com', credentialRef: 'TAVILY_API_KEY', timeoutMs: 120_000 },
         firecrawl: { baseUrl: 'https://api.firecrawl.dev/v2', credentialRef: 'FIRECRAWL_API_KEY', timeoutMs: 120_000 },
+        parallel: { baseUrl: 'https://api.parallel.ai', credentialRef: 'PARALLEL_API_KEY', timeoutMs: 120_000, mode: 'basic' },
       },
       webExtract: {
         tavily: { enabled: true },
         firecrawl: { enabled: true },
+        parallel: { enabled: false },
         smartDirect: { enabled: true, proxyUrl: 'http://127.0.0.1:7890' },
         direct: { enabled: true, proxyUrl: 'http://127.0.0.1:7891' },
       },
@@ -114,6 +116,7 @@ function snapshot(overrides: Partial<WebConfigSnapshot> = {}): WebConfigSnapshot
       protocols: ['completions', 'responses'],
       thinkingLevels: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
       toolDiscoveryModes: ['progressive', 'all'],
+      parallelSearchModes: ['turbo', 'fast', 'basic', 'advanced'],
       proxyUrlMaxCharacters: 2048,
       supplementalSearchMaxSources: 100,
     },
@@ -123,6 +126,7 @@ function snapshot(overrides: Partial<WebConfigSnapshot> = {}): WebConfigSnapshot
       exa: credentialState('EXA_API_KEY'),
       tavily: credentialState('TAVILY_API_KEY'),
       firecrawl: credentialState('FIRECRAWL_API_KEY'),
+      parallel: credentialState('PARALLEL_API_KEY'),
     },
     diagnostics: {
       capabilities: [{
@@ -384,8 +388,9 @@ describe('Search Enhance browser contribution', () => {
         revision: 1,
         value: {
           ...initial.value,
-          supplementalSearch: { ...initial.value.supplementalSearch, exa: true, tavily: true, maxSourcesPerProvider: 10 },
-          webExtract: { ...initial.value.webExtract, direct: { ...initial.value.webExtract.direct, enabled: false } },
+          supplementalSearch: { ...initial.value.supplementalSearch, exa: true, tavily: true, parallel: true, maxSourcesPerProvider: 10 },
+          providers: { ...initial.value.providers, parallel: { ...initial.value.providers.parallel, mode: 'advanced' } },
+          webExtract: { ...initial.value.webExtract, parallel: { enabled: true }, direct: { ...initial.value.webExtract.direct, enabled: false } },
         },
       }))
     })
@@ -403,6 +408,7 @@ describe('Search Enhance browser contribution', () => {
     }
     fireEvent.click(screen.getByRole('menuitem', { name: en.exa }))
     fireEvent.click(screen.getByRole('menuitem', { name: en.tavily }))
+    fireEvent.click(screen.getByRole('menuitem', { name: en.parallel }))
     expect(searchSelect.textContent).toContain('Exa, Tavily')
     expect(screen.getByRole('menuitem', { name: en.exa }).getAttribute('data-selected')).toBe('true')
     fireEvent.click(screen.getByRole('menuitem', { name: en.exa }))
@@ -413,9 +419,10 @@ describe('Search Enhance browser contribution', () => {
     const extractSelect = screen.getByRole('button', { name: en.extractHeading })
     expect(extractSelect.textContent).toContain('Tavily, Firecrawl, smart_direct, direct')
     fireEvent.click(extractSelect)
+    fireEvent.click(screen.getByRole('menuitem', { name: en.parallel }))
     fireEvent.click(screen.getByRole('menuitem', { name: en.direct }))
     expect(screen.getByRole('menuitem', { name: en.direct }).getAttribute('data-selected')).toBe('false')
-    expect(extractSelect.textContent).toContain('Tavily, Firecrawl, smart_direct')
+    expect(extractSelect.textContent).toContain('Tavily, Firecrawl, Parallel, smart_direct')
     expect(extractSelect.textContent).not.toContain(', direct')
     fireEvent.click(extractSelect)
     const research = screen.getByLabelText(en.maxSourcesPerProvider) as HTMLInputElement
@@ -428,6 +435,7 @@ describe('Search Enhance browser contribution', () => {
     expect((screen.getByRole('button', { name: en.save }) as HTMLButtonElement).disabled).toBe(true)
 
     fireEvent.change(research, { target: { value: '10' } })
+    fireEvent.change(screen.getByDisplayValue('basic'), { target: { value: 'advanced' } })
     fireEvent.click(screen.getByRole('button', { name: en.save }))
 
     expect(await screen.findByText(en.savedLive)).toBeTruthy()
@@ -436,8 +444,11 @@ describe('Search Enhance browser contribution', () => {
       mutations: [
         { op: 'set', path: ['supplementalSearch', 'exa'], value: true },
         { op: 'set', path: ['supplementalSearch', 'tavily'], value: true },
+        { op: 'set', path: ['supplementalSearch', 'parallel'], value: true },
         { op: 'set', path: ['supplementalSearch', 'maxSourcesPerProvider'], value: 10 },
+        { op: 'set', path: ['webExtract', 'parallel', 'enabled'], value: true },
         { op: 'set', path: ['webExtract', 'direct', 'enabled'], value: false },
+        { op: 'set', path: ['providers', 'parallel', 'mode'], value: 'advanced' },
       ],
     })
   })

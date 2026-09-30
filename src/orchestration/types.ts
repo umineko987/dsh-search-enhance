@@ -93,6 +93,7 @@ export interface SearchOrchestratorDependencies {
   readonly exa: BoundedSourceProvider
   readonly tavily: BoundedSourceProvider
   readonly firecrawl: BoundedSourceProvider
+  readonly parallel: BoundedSourceProvider
   /** Injectable monotonic-enough diagnostic clock; values never enter Provider requests. */
   readonly now?: () => number
 }

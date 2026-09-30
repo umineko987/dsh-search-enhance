@@ -11,12 +11,13 @@ export const WEB_CREDENTIAL_SLOTS = [
   'exa',
   'tavily',
   'firecrawl',
+  'parallel',
 ] as const
 
 export type WebCredentialSlot = (typeof WEB_CREDENTIAL_SLOTS)[number]
 
-export const WEB_SUPPLEMENTAL_SEARCH_PROVIDERS = ['exa', 'tavily', 'firecrawl'] as const
-export const WEB_EXTRACT_PROVIDER_KEYS = ['tavily', 'firecrawl', 'smartDirect', 'direct'] as const
+export const WEB_SUPPLEMENTAL_SEARCH_PROVIDERS = ['exa', 'tavily', 'firecrawl', 'parallel'] as const
+export const WEB_EXTRACT_PROVIDER_KEYS = ['tavily', 'firecrawl', 'parallel', 'smartDirect', 'direct'] as const
 
 export const WEB_EDITABLE_PATHS: readonly (readonly string[])[] = [
   ['defaultProfile'],
@@ -44,6 +45,10 @@ export const WEB_EDITABLE_PATHS: readonly (readonly string[])[] = [
   ['providers', 'firecrawl', 'baseUrl'],
   ['providers', 'firecrawl', 'credentialRef'],
   ['providers', 'firecrawl', 'timeoutMs'],
+  ['providers', 'parallel', 'baseUrl'],
+  ['providers', 'parallel', 'credentialRef'],
+  ['providers', 'parallel', 'timeoutMs'],
+  ['providers', 'parallel', 'mode'],
   ['webExtract', 'smartDirect', 'proxyUrl'],
   ['webExtract', 'direct', 'proxyUrl'],
 ]
@@ -84,10 +89,12 @@ export interface WebEditableConfig {
     exa: WebDiscoveryProviderConfig
     tavily: WebDiscoveryProviderConfig
     firecrawl: WebDiscoveryProviderConfig
+    parallel: WebDiscoveryProviderConfig & { mode: string }
   }
   webExtract: {
     tavily: { enabled: boolean }
     firecrawl: { enabled: boolean }
+    parallel: { enabled: boolean }
     smartDirect: WebProxyConfig
     direct: WebProxyConfig
   }
@@ -107,6 +114,7 @@ export interface WebConfigOptions {
   protocols: readonly string[]
   thinkingLevels: readonly string[]
   toolDiscoveryModes: readonly string[]
+  parallelSearchModes: readonly string[]
   proxyUrlMaxCharacters: number
   supplementalSearchMaxSources: number
 }

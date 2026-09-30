@@ -17,6 +17,7 @@ describe('public stage 0 contracts', () => {
       'firecrawl',
       'smart-direct',
       'direct',
+      'parallel',
     ])
   })
 

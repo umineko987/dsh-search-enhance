@@ -139,7 +139,7 @@ interface FakeSourceProvider extends BoundedSourceProvider {
 }
 
 function fakeSourceProvider(
-  provider: Extract<SourceProvider, 'exa' | 'tavily' | 'firecrawl'>,
+  provider: Extract<SourceProvider, 'exa' | 'tavily' | 'firecrawl' | 'parallel'>,
   capability: Extract<ProviderCapability, 'docs_search' | 'web_search'>,
   options: {
     readonly configured?: boolean | BoundedSourceProvider['configured']
@@ -172,6 +172,7 @@ interface FixtureOptions {
   readonly exa?: FakeSourceProvider
   readonly tavily?: FakeSourceProvider
   readonly firecrawl?: FakeSourceProvider
+  readonly parallel?: FakeSourceProvider
 }
 
 function fixture(options: FixtureOptions = {}) {
@@ -181,18 +182,21 @@ function fixture(options: FixtureOptions = {}) {
   const tavily = options.tavily ?? fakeSourceProvider('tavily', 'web_search')
   const firecrawl = options.firecrawl ?? fakeSourceProvider('firecrawl', 'web_search')
   let now = 0
+  const parallel = options.parallel ?? fakeSourceProvider('parallel', 'web_search')
   const getConfig = vi.fn(() => config)
   return {
     config,
     exa,
     firecrawl,
     getConfig,
+    parallel,
     main,
     orchestrator: new SearchOrchestrator({
       exa,
       firecrawl,
       getConfig,
       mainSearch: { searchResolved: main },
+      parallel,
       now: () => {
         now += 1
         return now
@@ -208,6 +212,32 @@ function input(query = 'ordinary query', signal = new AbortController().signal) 
 }
 
 describe('explicit supplemental Provider selection', () => {
+  it.each([false, true])('collects and retains Parallel sources only when selected (%s)', async enabled => {
+    const parallel = fakeSourceProvider('parallel', 'web_search', {
+      configured: true,
+      search: complete([source('https://parallel.test/article', 'parallel')]),
+    })
+    const test = fixture({
+      parallel,
+      config: resolveConfig({ supplementalSearch: { parallel: enabled, maxSourcesPerProvider: 2 } }),
+    })
+
+    const result = await test.orchestrator.search(input())
+
+    expect(parallel.configured).toHaveBeenCalledTimes(enabled ? 1 : 0)
+    expect(parallel.search).toHaveBeenCalledTimes(enabled ? 1 : 0)
+    expect(test.exa.search).not.toHaveBeenCalled()
+    expect(test.tavily.search).not.toHaveBeenCalled()
+    expect(test.firecrawl.search).not.toHaveBeenCalled()
+    if (enabled) {
+      expect(parallel.search).toHaveBeenCalledWith(expect.objectContaining({ limit: 2 }))
+      expect(result.persistence.sources).toContainEqual(expect.objectContaining({ provider: 'parallel' }))
+      expect(result.diagnostics.attempts).toContainEqual(expect.objectContaining({ provider: 'parallel', outcome: 'success' }))
+    } else {
+      expect(result.persistence.sources.some(source => source.provider === 'parallel')).toBe(false)
+    }
+  })
+
   it.each([false, true, undefined])('only warns when native search reporting is explicitly absent (%s)', async reported => {
     const test = fixture({ main: async () => mainResult('Answer.', [],
       reported === undefined ? {} : { nativeSearchReported: reported }) })
@@ -765,6 +795,7 @@ describe('source order, exact deduplication, and independent output limits', () 
       ['exa', 'success'],
       ['tavily', 'success'],
       ['firecrawl', 'success'],
+      ['parallel', 'skipped'],
     ])
     expect(result.diagnostics).not.toHaveProperty('quality')
   })

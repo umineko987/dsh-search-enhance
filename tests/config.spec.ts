@@ -31,8 +31,15 @@ describe('stage 0 configuration contract', () => {
       thinkingLevel: 'off',
       timeoutMs: 120_000,
     })
+    expect(config.providers.parallel).toEqual({
+      baseUrl: 'https://api.parallel.ai',
+      credentialRef: DEFAULT_CREDENTIAL_REFS.parallel,
+      mode: 'basic',
+      timeoutMs: 120_000,
+    })
+    expect(config.webExtract.parallel.enabled).toBe(false)
     expect(config.budgets).toEqual(DEFAULT_SEARCH_BUDGETS)
-    expect(config.supplementalSearch).toEqual({ exa: false, tavily: false, firecrawl: false, maxSourcesPerProvider: 5 })
+    expect(config.supplementalSearch).toEqual({ exa: false, tavily: false, firecrawl: false, parallel: false, maxSourcesPerProvider: 5 })
     expect(resolveConfig({ supplementalSearch: { exa: true, tavily: true } }).supplementalSearch)
       .toMatchObject({ exa: true, tavily: true, firecrawl: false })
     expect(() => resolveConfig({

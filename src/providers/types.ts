@@ -68,7 +68,7 @@ export interface SourceProviderSearchInput {
  */
 export interface BoundedSourceProvider {
   readonly capability: Extract<ProviderCapability, 'docs_search' | 'web_search'>
-  readonly provider: Extract<SourceProvider, 'context7' | 'exa' | 'tavily' | 'firecrawl'>
+  readonly provider: Extract<SourceProvider, 'context7' | 'exa' | 'tavily' | 'firecrawl' | 'parallel'>
   configured(config: Config): Promise<boolean>
   search(input: SourceProviderSearchInput): Promise<SourceProviderSearchOutcome>
 }

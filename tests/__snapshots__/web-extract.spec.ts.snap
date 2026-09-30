@@ -74,5 +74,23 @@ exports[`web_extract internal contract and fixed orchestrator > pins route and e
     "retrievalRoute": "direct",
     "truncated": false,
   },
+  {
+    "attempts": [
+      {
+        "attempts": 1,
+        "capability": "web_extract",
+        "durationMs": 0,
+        "outcome": "success",
+        "participatedInFallback": false,
+        "provider": "parallel_extract",
+      },
+    ],
+    "content": "body from parallel_extract",
+    "evidenceLevel": "extracted_content",
+    "format": "markdown",
+    "requestedUrl": "https://example.test/article",
+    "retrievalRoute": "parallel_extract",
+    "truncated": false,
+  },
 ]
 `;

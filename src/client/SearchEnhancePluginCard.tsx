@@ -45,7 +45,7 @@ type Translate = SearchEnhancePluginCardProps['t']
 type ProviderId = Exclude<WebCredentialSlot, 'searchApi'>
 type Feedback = 'idle' | 'saved' | 'conflict' | 'error'
 
-const PROVIDERS: readonly ProviderId[] = ['context7', 'exa', 'tavily', 'firecrawl']
+const PROVIDERS: readonly ProviderId[] = ['context7', 'exa', 'tavily', 'firecrawl', 'parallel']
 const PROXY_ROUTES = [
   ['smartDirect', 'smartDirectProxy'],
   ['direct', 'directProxy'],
@@ -56,6 +56,7 @@ const CREDENTIAL_NAME_KEYS: Record<WebCredentialSlot, SearchEnhanceLocaleKey> = 
   exa: 'exa',
   tavily: 'tavily',
   firecrawl: 'firecrawl',
+  parallel: 'parallel',
 }
 
 const cardStyle: CSSProperties = {
@@ -129,10 +130,12 @@ function cloneConfig(config: WebEditableConfig): WebEditableConfig {
       exa: { ...config.providers.exa },
       tavily: { ...config.providers.tavily },
       firecrawl: { ...config.providers.firecrawl },
+      parallel: { ...config.providers.parallel },
     },
     webExtract: {
       tavily: { ...config.webExtract.tavily },
       firecrawl: { ...config.webExtract.firecrawl },
+      parallel: { ...config.webExtract.parallel },
       smartDirect: { ...config.webExtract.smartDirect },
       direct: { ...config.webExtract.direct },
     },
@@ -643,6 +646,20 @@ export function SearchEnhancePluginCard({ t }: SearchEnhancePluginCardProps) {
                       onChange={value => { updateSupplementalSearch({ maxSourcesPerProvider: value }) }}
                     />
                   </Field>
+                  <Field label={t('parallelSearchMode')} overridden={isOverridden(snapshot.user, ['providers', 'parallel', 'mode'])} t={t}>
+                    <Select
+                      value={draft.providers.parallel.mode}
+                      options={snapshot.options.parallelSearchModes}
+                      disabled={!editable}
+                      onChange={mode => {
+                        setDraft(current => current === undefined ? current : {
+                          ...current,
+                          providers: { ...current.providers, parallel: { ...current.providers.parallel, mode } },
+                        })
+                        setFeedback('idle')
+                      }}
+                    />
+                  </Field>
                 </div>
               </section>
 
@@ -663,6 +680,7 @@ export function SearchEnhancePluginCard({ t }: SearchEnhancePluginCardProps) {
                     setFeedback('idle')
                   }}
                 />
+                <p style={noteStyle}>{t('parallelExtractHint')}</p>
                 <section style={sectionStyle} aria-labelledby="search-enhance-proxy-heading">
                   <h4 id="search-enhance-proxy-heading" style={headingStyle}>{t('proxyHeading')}</h4>
                   <p style={bodyStyle}>{t('proxyIntro')}</p>

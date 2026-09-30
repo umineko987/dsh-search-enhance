@@ -88,6 +88,7 @@ function orchestrator(input: {
   return new WebExtractOrchestrator({
     tavilyExtract: input.tavily ?? stub('tavily_extract', { state: 'not_configured' }),
     firecrawlScrape: input.firecrawl ?? stub('firecrawl_scrape', { state: 'not_configured' }),
+    parallelExtract: stub('parallel_extract', { state: 'not_configured' }),
     smartDirect: input.smart ?? new SmartDirectProvider(),
     direct: input.direct ?? new DirectFetchProvider(),
     getConfig: () => input.config ?? Config({} as never),

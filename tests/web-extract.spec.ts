@@ -77,6 +77,7 @@ function orchestrator(
   return new WebExtractOrchestrator({
     direct: make('direct'),
     firecrawlScrape: make('firecrawl_scrape'),
+    parallelExtract: make('parallel_extract'),
     smartDirect: make('smart_direct'),
     tavilyExtract: make('tavily_extract'),
     getConfig: () => value,
@@ -190,9 +191,10 @@ describe('web_extract internal contract and fixed orchestrator', () => {
     ['firecrawl_scrape', 'extracted_content'],
     ['smart_direct', 'extracted_content'],
     ['direct', 'direct_http_content'],
+    ['parallel_extract', 'extracted_content'],
   ] as const)('maps %s to the truthful %s evidence level', async (route, evidenceLevel) => {
     const adapters: Partial<Record<WebExtractRoute, WebExtractAdapter>> = {}
-    for (const candidate of ['tavily_extract', 'firecrawl_scrape', 'smart_direct', 'direct'] as const) {
+    for (const candidate of WEB_EXTRACT_ROUTES) {
       adapters[candidate] = adapter(candidate, success(), { enabled: candidate === route })
     }
     const result = await orchestrator(adapters).extract(input(undefined, undefined, undefined, route))

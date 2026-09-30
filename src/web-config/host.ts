@@ -6,6 +6,7 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 
 import {
   Config as SearchEnhanceConfig,
+  PARALLEL_SEARCH_MODES,
   SUPPLEMENTAL_SEARCH_MAX_SOURCES,
   SEARCH_API_PROTOCOLS,
   SEARCH_DEPTHS,
@@ -128,10 +129,12 @@ function projectConfig(config: SearchEnhanceConfigValue): WebEditableConfig {
       exa: projectProvider(config.providers.exa),
       tavily: projectProvider(config.providers.tavily),
       firecrawl: projectProvider(config.providers.firecrawl),
+      parallel: { ...projectProvider(config.providers.parallel), mode: config.providers.parallel.mode },
     },
     webExtract: {
       tavily: { enabled: config.webExtract.tavily.enabled },
       firecrawl: { enabled: config.webExtract.firecrawl.enabled },
+      parallel: { enabled: config.webExtract.parallel.enabled },
       smartDirect: {
         enabled: config.webExtract.smartDirect.enabled,
         proxyUrl: projectProxyUrl(config.webExtract.smartDirect.proxyUrl, 'smart_direct proxy URL'),
@@ -288,6 +291,7 @@ export async function readWebConfigSnapshot(
       protocols: [...SEARCH_API_PROTOCOLS],
       thinkingLevels: [...THINKING_LEVELS],
       toolDiscoveryModes: [...TOOL_DISCOVERY_MODES],
+      parallelSearchModes: [...PARALLEL_SEARCH_MODES],
       proxyUrlMaxCharacters: WEB_EXTRACT_PROXY_URL_MAX_CHARACTERS,
       supplementalSearchMaxSources: SUPPLEMENTAL_SEARCH_MAX_SOURCES,
     },

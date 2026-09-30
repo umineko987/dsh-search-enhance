@@ -70,7 +70,7 @@ export class SourceSearchDiagnosticProbe implements DiagnosticProbe {
     readonly capability: Extract<DiagnosticCapability, 'main_search' | 'docs_search'>,
     readonly provider: Extract<
       DiagnosticProviderName,
-      'exa' | 'tavily_search' | 'firecrawl_search'
+      'exa' | 'tavily_search' | 'firecrawl_search' | 'parallel_search'
     >,
     private readonly source: Pick<BoundedSourceProvider, 'search'>,
   ) {}

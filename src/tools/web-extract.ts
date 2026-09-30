@@ -235,7 +235,7 @@ export function createWebExtractTool(
 ): ToolDefinition {
   return defineTool({
     name: 'web_extract',
-    description: `Preferred tool for readable webpage bodies: articles, blogs, repository READMEs, and model cards. For raw JSON APIs or XML/Atom feeds, prefer the host web_fetch when available. Read one HTTP(S) URL using exactly one explicitly selected Provider; failures never switch Providers. Enabled Providers: ${enabledWebExtractProviders(dependencies.getConfig()).join(', ') || 'none'}. No JavaScript or login in local routes; host-reachable addresses may be accessed, and evidence differs by route.`,
+    description: `Preferred tool for readable webpage bodies: articles, blogs, repository READMEs, and model cards. For raw JSON APIs or XML/Atom feeds, prefer the host web_fetch when available. Read one HTTP(S) URL using exactly one explicitly selected Provider; failures never switch Providers. Enabled Providers: ${enabledWebExtractProviders(dependencies.getConfig()).join(', ') || 'none'}. Parallel supports Markdown only. No JavaScript or login in local routes; host-reachable addresses may be accessed, and evidence differs by route.`,
     parameters: WEB_EXTRACT_PARAMETERS,
     isConcurrencySafe: () => true,
     output: {

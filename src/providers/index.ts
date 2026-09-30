@@ -90,6 +90,16 @@ export {
   TavilyExtractProvider,
   type TavilyExtractProviderDependencies,
 } from './tavily-extract.js'
+export {
+  ParallelSearchProvider,
+  parseParallelSearchSources,
+  type ParallelSearchProviderDependencies,
+} from './parallel.js'
+export {
+  ParallelExtractProvider,
+  parseParallelExtractResponse,
+  type ParallelExtractProviderDependencies,
+} from './parallel-extract.js'
 export { SOURCE_PROVIDER_WARNING_CODES } from './types.js'
 export type {
   BoundedSourceProvider,

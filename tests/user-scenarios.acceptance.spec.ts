@@ -111,7 +111,7 @@ function scenarioConfig(
         },
       },
     },
-    supplementalSearch: { exa: true, tavily: true, firecrawl: true, maxSourcesPerProvider: 4 },
+    supplementalSearch: { exa: true, tavily: true, firecrawl: true, parallel: false, maxSourcesPerProvider: 4 },
     retention: {
       ...base.retention,
       canonicalOutputMaxBytes: 128 * 1024,
@@ -151,6 +151,12 @@ async function executeScenario(
     firecrawl: providers.firecrawl,
     getConfig: () => config,
     mainSearch: { searchResolved: mainSearch },
+    parallel: {
+      capability: 'web_search',
+      configured: async () => false,
+      provider: 'parallel',
+      search: async () => ({ state: 'not_configured' }),
+    },
     now: () => {
       tick += 1
       return tick

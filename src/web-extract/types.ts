@@ -16,6 +16,7 @@ export const WEB_EXTRACT_ROUTES = [
   'firecrawl_scrape',
   'smart_direct',
   'direct',
+  'parallel_extract',
 ] as const
 export type WebExtractRoute = (typeof WEB_EXTRACT_ROUTES)[number]
 
@@ -26,6 +27,7 @@ export function enabledWebExtractProviders(config: Config): readonly WebExtractR
     firecrawl_scrape: 'firecrawl',
     smart_direct: 'smartDirect',
     direct: 'direct',
+    parallel_extract: 'parallel',
   } as const
   return WEB_EXTRACT_ROUTES.filter(route => config.webExtract[keys[route]].enabled)
 }
@@ -44,7 +46,7 @@ export function evidenceLevelForRoute(route: WebExtractRoute): WebExtractEvidenc
 
 /**
  * A safe attempt projection for one route. It deliberately reuses the stage-0
- * attempt vocabulary while narrowing `provider` to the four route identifiers.
+ * attempt vocabulary while narrowing `provider` to the fixed route identifiers.
  * No URL, header, credential, response body, or arbitrary error message fits
  * this type.
  */
@@ -166,6 +168,7 @@ export interface WebExtractAdapter {
 export interface WebExtractOrchestratorDependencies {
   readonly tavilyExtract: WebExtractAdapter
   readonly firecrawlScrape: WebExtractAdapter
+  readonly parallelExtract: WebExtractAdapter
   readonly smartDirect: WebExtractAdapter
   readonly direct: WebExtractAdapter
   readonly getConfig?: () => Config

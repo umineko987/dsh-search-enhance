@@ -81,7 +81,7 @@ describe('search diagnostics status and probe orchestration', () => {
 
     const value = await reporter.show({ config: config(), signal: new AbortController().signal })
 
-    expect(describe).toHaveBeenCalledTimes(5)
+    expect(describe).toHaveBeenCalledTimes(6)
     expect(forbiddenProbe).not.toHaveBeenCalled()
     expect(fetch).not.toHaveBeenCalled()
     expect(value).toMatchObject({ action: 'show', tested: false, fallbackUsed: false })
@@ -180,19 +180,21 @@ describe('search diagnostics status and probe orchestration', () => {
       'main_search/exa',
       'main_search/tavily_search',
       'main_search/firecrawl_search',
+      'main_search/parallel_search',
       'docs_search/context7',
       'docs_search/exa',
       'web_extract/tavily_extract',
       'web_extract/firecrawl_scrape',
       'web_extract/smart_direct',
       'web_extract/direct',
+      'web_extract/parallel_extract',
       'site_map/tavily_map',
     ])
     expect(report.providerAttempts.filter(item => item.outcome === 'success')).toHaveLength(exa ? 6 : 5)
     expect(report.providerAttempts.find(item => item.capability === 'main_search' && item.provider === 'exa'))
       .toMatchObject(exa ? { outcome: 'success', attempts: 1 } : { outcome: 'disabled', attempts: 0 })
     expect(report.providerAttempts.filter(item => item.capability === 'web_extract' || item.capability === 'site_map')
-      .every(item => item.outcome === 'unsupported')).toBe(true)
+      .every(item => item.outcome === (item.provider === 'parallel_extract' ? 'disabled' : 'unsupported'))).toBe(true)
     expect(report.providersUsed).toEqual(['search_api', 'tavily_search', 'firecrawl_search', 'context7', 'exa'])
     expect(report.fallbackUsed).toBe(false)
     expect(report.warnings).toContainEqual({ code: 'unsupported', count: 5 })
@@ -218,7 +220,7 @@ describe('search diagnostics status and probe orchestration', () => {
       ],
     })
     const value = config({
-      supplementalSearch: { exa: false, tavily: false, firecrawl: false, maxSourcesPerProvider: 5 },
+      supplementalSearch: { exa: false, tavily: false, firecrawl: false, parallel: false, maxSourcesPerProvider: 5 },
     })
 
     const report = await reporter.test({ config: value, signal: new AbortController().signal })

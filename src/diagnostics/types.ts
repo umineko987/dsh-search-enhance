@@ -34,6 +34,8 @@ export const DIAGNOSTIC_PROVIDERS = [
   'smart_direct',
   'direct',
   'tavily_map',
+  'parallel_search',
+  'parallel_extract',
 ] as const
 export type DiagnosticProviderName = (typeof DIAGNOSTIC_PROVIDERS)[number]
 
@@ -107,6 +109,8 @@ export interface DiagnosticConfigurationStatus {
   readonly firecrawlSearchEnabled: boolean
   readonly tavilyExtractEnabled: boolean
   readonly firecrawlScrapeEnabled: boolean
+  readonly parallelSearchEnabled: boolean
+  readonly parallelExtractEnabled: boolean
   readonly smartDirectEnabled: boolean
   readonly directEnabled: boolean
 }

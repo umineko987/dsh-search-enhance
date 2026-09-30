@@ -8,6 +8,7 @@ export const SOURCE_PROVIDERS = [
   'firecrawl',
   'smart-direct',
   'direct',
+  'parallel',
 ] as const
 
 export type SourceProvider = (typeof SOURCE_PROVIDERS)[number]

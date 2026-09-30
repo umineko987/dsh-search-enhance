@@ -39,7 +39,7 @@ import type {
 const ORCHESTRATOR_PROVIDER = 'search-orchestrator'
 const PARTIAL_ANSWER = '主搜索失败，仅返回补充来源。'
 
-type SourceSlotKey = 'exa' | 'tavily' | 'firecrawl'
+type SourceSlotKey = 'exa' | 'tavily' | 'firecrawl' | 'parallel'
 
 interface TaskTrack<T> {
   readonly provider: string
@@ -412,6 +412,7 @@ export class SearchOrchestrator {
   private readonly exa: BoundedSourceProvider
   private readonly tavily: BoundedSourceProvider
   private readonly firecrawl: BoundedSourceProvider
+  private readonly parallel: BoundedSourceProvider
   private readonly now: () => number
 
   constructor(dependencies: SearchOrchestratorDependencies) {
@@ -420,6 +421,7 @@ export class SearchOrchestrator {
     this.exa = dependencies.exa
     this.tavily = dependencies.tavily
     this.firecrawl = dependencies.firecrawl
+    this.parallel = dependencies.parallel
     this.now = dependencies.now ?? Date.now
   }
 
@@ -504,6 +506,17 @@ export class SearchOrchestrator {
         planningDurationMs: 0,
         planningError: undefined,
         provider: this.firecrawl,
+        skipReason: undefined,
+        track: undefined,
+      },
+      {
+        available: false,
+        capability: 'web_search',
+        key: 'parallel',
+        limit: 0,
+        planningDurationMs: 0,
+        planningError: undefined,
+        provider: this.parallel,
         skipReason: undefined,
         track: undefined,
       },

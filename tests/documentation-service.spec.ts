@@ -687,7 +687,7 @@ describe('web_search documentation integration', () => {
       state: 'complete',
       totalDelayMs: 0,
     }
-    const unavailable = (provider: 'tavily' | 'firecrawl'): BoundedSourceProvider => ({
+    const unavailable = (provider: 'tavily' | 'firecrawl' | 'parallel'): BoundedSourceProvider => ({
       capability: 'web_search',
       configured: async () => false,
       provider,
@@ -722,6 +722,7 @@ describe('web_search documentation integration', () => {
     const orchestrator = new SearchOrchestrator({
       exa,
       firecrawl: unavailable('firecrawl'),
+      parallel: unavailable('parallel'),
       getConfig: () => test.config,
       mainSearch: {
         searchResolved: async () => ({

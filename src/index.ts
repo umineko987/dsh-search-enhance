@@ -13,6 +13,8 @@ import { ExaProvider } from './providers/exa.js'
 import { FirecrawlSearchProvider } from './providers/firecrawl.js'
 import { FirecrawlScrapeProvider } from './providers/firecrawl-scrape.js'
 import { DirectFetchProvider } from './providers/direct-fetch.js'
+import { ParallelSearchProvider } from './providers/parallel.js'
+import { ParallelExtractProvider } from './providers/parallel-extract.js'
 import { SearchApiProvider } from './providers/search-api.js'
 import { SmartDirectProvider } from './providers/smart-direct.js'
 import { TavilySearchProvider } from './providers/tavily.js'
@@ -93,16 +95,19 @@ export async function apply(ctx: Context, config: SearchEnhanceConfigValue): Pro
   })
   const firecrawl = new FirecrawlSearchProvider(providerDependencies)
   const tavily = new TavilySearchProvider(providerDependencies)
+  const parallel = new ParallelSearchProvider(providerDependencies)
   const orchestrator = new SearchOrchestrator({
     exa,
     firecrawl,
     getConfig,
     mainSearch: searchApi,
+    parallel,
     tavily,
   })
   const webExtract = new WebExtractOrchestrator({
     tavilyExtract: new TavilyExtractProvider(providerDependencies),
     firecrawlScrape: new FirecrawlScrapeProvider(providerDependencies),
+    parallelExtract: new ParallelExtractProvider(providerDependencies),
     smartDirect: new SmartDirectProvider(),
     direct: new DirectFetchProvider(),
     getConfig,

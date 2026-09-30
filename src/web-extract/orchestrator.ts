@@ -202,6 +202,7 @@ export class WebExtractOrchestrator {
     this.adapters = Object.freeze([
       dependencies.tavilyExtract,
       dependencies.firecrawlScrape,
+      dependencies.parallelExtract,
       dependencies.smartDirect,
       dependencies.direct,
     ])

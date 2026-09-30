@@ -9,6 +9,7 @@ import { Config, type Config as SearchEnhanceConfig } from '../src/config.js'
 import {
   FirecrawlScrapeProvider,
   parseFirecrawlScrapeResponse,
+  ParallelExtractProvider,
   TavilyExtractProvider,
   parseTavilyExtractResponse,
 } from '../src/providers/index.js'
@@ -534,6 +535,7 @@ describe('remote extraction composition', () => {
     const extractor = new WebExtractOrchestrator({
       tavilyExtract: new TavilyExtractProvider({ credentials: credentialFixture, fetch: fetchMock }),
       firecrawlScrape: new FirecrawlScrapeProvider({ credentials: credentialFixture, fetch: fetchMock }),
+      parallelExtract: new ParallelExtractProvider({ credentials: credentialFixture, fetch: fetchMock }),
       smartDirect: unavailable('smart_direct'),
       direct: unavailable('direct'),
       getConfig: () => resolvedConfig,
@@ -590,6 +592,7 @@ describe('remote extraction composition', () => {
     const extractor = new WebExtractOrchestrator({
       tavilyExtract: new TavilyExtractProvider({ credentials: credentialFixture, fetch: fetchMock }),
       firecrawlScrape: new FirecrawlScrapeProvider({ credentials: credentialFixture, fetch: fetchMock }),
+      parallelExtract: new ParallelExtractProvider({ credentials: credentialFixture, fetch: fetchMock }),
       smartDirect: {
         route: 'smart_direct',
         enabled: () => true,
