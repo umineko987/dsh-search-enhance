@@ -396,6 +396,43 @@ describe('high-level documentation provider routing', () => {
     expect(test.calls).toHaveLength(2)
   })
 
+  it('rejects unrelated Context7 candidates on both fresh and cached resolve paths', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ results: [{
+      id: '/websites/yield_xyz', title: 'Yield.xyz',
+      description: 'Official quickstart installation documentation', trustScore: 10, benchmarkScore: 100,
+    }] })) as typeof fetch
+    const test = fixture({ fetch: fetchMock })
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const result = await test.service.search(input('context7', {
+        libraryName: 'zzzz-nonexistent-lib-xyz-123', query: 'quickstart installation', maxResults: 1,
+      }))
+      expect(result.selectedLibrary).toBeUndefined()
+      expect(result.sources).toEqual([])
+      expect(result.snippets).toEqual([])
+      expect(result.cache.docs).toMatchObject({ state: 'skipped', reason: 'library_not_found' })
+      expect(result.warnings).toContainEqual({ code: 'library_not_found', provider: 'context7', path: 'resolve' })
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('retains every collected merged source beyond the inline max_results prefix', async () => {
+    const test = fixture({
+      exaCredential: 'exa-secret',
+      fetch: vi.fn(async request => String(request).includes('exa.test')
+        ? jsonResponse({ results: Array.from({ length: 3 }, (_, index) => ({
+            url: `https://example.test/docs/${index}`, title: `Documentation ${index}`,
+          })) })
+        : jsonResponse({ codeSnippets: [{ content: 'React documentation' }] })) as typeof fetch,
+    })
+    const result = await test.service.search(input('all', { libraryId: '/reactjs/react.dev', maxResults: 3 }))
+    expect(result.sources).toHaveLength(3)
+    expect(result.totalSources).toBe(4)
+    expect(result.persistence.sources).toHaveLength(4)
+    expect(result.persistence.collectionTruncated).toBe(false)
+    expect(result.warnings).toContainEqual({ code: 'visible_sources_truncated' })
+    expect(result.warnings).toContainEqual({ code: 'collection_limit_reached', provider: 'exa', count: 3 })
+    expect(result.warnings).not.toContainEqual({ code: 'provider_result_truncated' })
+  })
   it('scans an internal candidate window without widening public result limits', async () => {
     const query = 'How to use React hooks useEffect documentation'
     const libraries = [
@@ -495,6 +532,8 @@ describe('high-level documentation provider routing', () => {
     expect(highLevel.returnedSources).toBe(6)
     expect(highLevel.returnedSnippets).toBe(6)
     expect(highLevel.totalSources).toBeGreaterThan(6)
+    expect(highLevel.persistence.sources).toHaveLength(highLevel.totalSources)
+    expect(highLevel.persistence.sources.length).toBeGreaterThan(highLevel.returnedSources)
     expect(docsCalls).toEqual([{ libraryId: '/reactjs/react.dev', limit: 6 }])
     expect(resolveLimits).toEqual([30, 6])
     expect(resolveInputs).toEqual([
@@ -580,7 +619,7 @@ describe('documentation partial success, empty results, cache fallback, and canc
     }) as typeof fetch
     const test = fixture({ fetch: fetchMock })
 
-    const result = await test.service.search(input('context7'))
+    const result = await test.service.search(input('context7', { libraryName: 'Library' }))
 
     expect(result.sources).toEqual([
       expect.objectContaining({ provider: 'context7', title: 'Library' }),

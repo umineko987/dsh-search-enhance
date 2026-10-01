@@ -60,11 +60,9 @@ function outputWarning(
   }
 }
 
-function ensureSourcesTruncatedWarning(
-  warnings: WebSearchWarning[],
-): void {
-  if (!warnings.some(warning => warning.code === 'sources_truncated')) {
-    warnings.push({ code: 'sources_truncated' })
+function ensureRetentionWarning(warnings: WebSearchWarning[]): void {
+  if (!warnings.some(warning => warning.code === 'source_retention_truncated')) {
+    warnings.push({ code: 'source_retention_truncated' })
   }
 }
 
@@ -76,7 +74,9 @@ export function projectWebSearchOutput(
 ): WebSearchOutput {
   const warnings = result.canonical.warnings.map(outputWarning)
   const storageTruncated = commit?.record.truncated === true
-  if (storageTruncated) ensureSourcesTruncatedWarning(warnings)
+  if (commit !== undefined && commit.record.sources.length < commit.record.totalBeforeRetention) {
+    ensureRetentionWarning(warnings)
+  }
   const sources = result.canonical.sources.map(source => ({
     url: source.url,
     ...(source.title === undefined ? {} : { title: source.title }),

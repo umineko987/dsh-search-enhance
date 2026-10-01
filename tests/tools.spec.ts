@@ -30,6 +30,8 @@ import {
   searchSourcesPresentationMeta,
 } from '../src/presentation/web-card.js'
 import {
+  isDocsSearchModelTextTruncated,
+  isWebSearchModelTextTruncated,
   renderDocsSearchText,
   renderWebSearchText,
   renderSearchSourcesText,
@@ -590,9 +592,21 @@ describe('canonical Consumer projections', () => {
       { sourceRef, record: storedRecord(true) },
     )
     expect(withTruncatedCommit.truncated).toBe(true)
-    expect(withTruncatedCommit.warnings).toContainEqual({ code: 'sources_truncated' })
+    expect(withTruncatedCommit.warnings).toContainEqual({ code: 'source_retention_truncated' })
   })
 
+  it('does not describe upstream collection truncation as lost storage entries', () => {
+    const commit = { sourceRef, record: { ...storedRecord(), collectionTruncated: true, truncated: true } }
+    const result = orchestrationResult()
+    const web = projectWebSearchOutput({
+      ...result, canonical: { ...result.canonical, warnings: [{ code: 'sources_truncated' }] },
+    }, resolvedConfig(), commit)
+    expect(web.warnings).toEqual([{ code: 'sources_truncated' }])
+    expect(renderWebSearchText(web)).toContain('Source collection reached a Provider limit')
+    expect(renderWebSearchText(web)).not.toContain('Source storage dropped')
+    const docs = projectDocsSearchOutput(docsResult(), resolvedConfig(), commit)
+    expect(docs.warnings.some(warning => warning.code === 'source_retention_truncated')).toBe(false)
+  })
   it('projects bounded docs facts, cache/provider states, and only a durable source_ref', () => {
     const result = docsResult()
     const output = projectDocsSearchOutput(
@@ -637,7 +651,7 @@ describe('canonical Consumer projections', () => {
       resolvedConfig(),
       { sourceRef, record: { ...storedRecord(true), profile: 'coding_docs', depth: 'compact' } },
     )
-    expect(withRetentionCut.warnings).toContainEqual({ code: 'sources_truncated' })
+    expect(withRetentionCut.warnings).toContainEqual({ code: 'source_retention_truncated' })
   })
 
   it('bounds the complete docs_search envelope at exact, over, tiny, and multibyte limits', () => {
@@ -757,6 +771,34 @@ describe('canonical Consumer projections', () => {
 })
 
 describe('Native model text', () => {
+  it('marks model-text-only cuts while preserving counts, discovery notice, and source_ref', () => {
+    const web: WebSearchOutput = {
+      ...resultWithLimit(1024, 'Long answer 界🙂'.repeat(2000)),
+      warnings: [], truncated: false,
+    }
+    const docs: DocsSearchOutput = {
+      ...projectDocsSearchOutput(docsResult(), resolvedConfig()),
+      snippets: [{ content: 'Long snippet 界🙂'.repeat(2000) }],
+      source_ref: sourceRef, warnings: [], truncated: false, model_text_max_bytes: 1024,
+    }
+    for (const [value, text] of [
+      [web, renderWebSearchText(web)], [docs, renderDocsSearchText(docs)],
+    ] as const) {
+      expect(value.truncated).toBe(false)
+      expect(text).toContain('[Model text truncated by model_text_max_bytes.]')
+      expect(text).toContain(`Sources shown: ${value.returned_sources}/${value.total_sources}`)
+      expect(text).toContain('Evidence level: discovery')
+      expect(text).toContain(`Source reference: ${sourceRef}`)
+      expect(Buffer.byteLength(text, 'utf8')).toBeLessThanOrEqual(value.model_text_max_bytes)
+      expect(text).not.toContain(String.fromCodePoint(0xfffd))
+    }
+    expect(isWebSearchModelTextTruncated(web)).toBe(true)
+    expect(isDocsSearchModelTextTruncated(docs)).toBe(true)
+    expect(isWebSearchModelTextTruncated({ ...web, model_text_max_bytes: 64 * 1024 })).toBe(false)
+    expect(isDocsSearchModelTextTruncated({ ...docs, model_text_max_bytes: 64 * 1024 })).toBe(false)
+    expect(webSearchPresentationMeta({ query: 'test' }, web)).toMatchObject({ truncated: true })
+    expect(docsSearchPresentationMeta({ query: 'test' }, docs)).toMatchObject({ truncated: true })
+  })
   it('renders limitations before the answer and sources, then counts and discovery notice', () => {
     const text = renderWebSearchText(resultWithLimit(64 * 1024))
     const limitations = text.indexOf('Limitations')
@@ -802,7 +844,8 @@ describe('Native model text', () => {
     expect(text.startsWith('Limitations\n- ')).toBe(true)
     expect(text).toContain(reason)
     expect(text).toContain('A selected supplemental Provider is not configured (firecrawl/web_search).')
-    expect(text.indexOf(reason)).toBeLessThan(text.indexOf('The answer, visible sources'))
+    expect(text.indexOf(reason)).toBeLessThan(text.indexOf('[Model text truncated'))
+    expect(text).toContain('Sources shown: 1/3')
     expect(text).not.toContain('SNIPPET_TAIL')
     expect(text).toContain(`Source reference: ${sourceRef}`)
     expect(text).toContain('call search_sources directly on the next step')
@@ -884,15 +927,14 @@ describe('Native model text', () => {
     expect(Buffer.byteLength(over, 'utf8')).toBeLessThanOrEqual(exactBytes - 1)
     expect(over.length).toBeLessThan(unbounded.length)
 
-    expect(renderWebSearchText(resultWithLimit(1))).toBe('S')
-    const { source_ref: _sourceRef, ...withoutSourceRef } = {
-      ...resultWithLimit(64 * 1024, '界面'),
-      warnings: [],
-      truncated: false,
-    }
-    void _sourceRef
-    expect(renderWebSearchText({ ...withoutSourceRef, model_text_max_bytes: 2 })).toBe('')
-    expect(renderWebSearchText({ ...withoutSourceRef, model_text_max_bytes: 3 })).toBe('界')
+    expect(over).toContain('[Model text truncated by model_text_max_bytes.]')
+    expect(renderWebSearchText(resultWithLimit(1))).toBe('[')
+    const unicode = renderWebSearchText({
+      ...resultWithLimit(1024, '界🙂'.repeat(2000)), warnings: [], truncated: false,
+    })
+    expect(Buffer.byteLength(unicode, 'utf8')).toBeLessThanOrEqual(1024)
+    expect(unicode).toContain('界🙂')
+    expect(unicode).not.toContain(String.fromCodePoint(0xfffd))
   })
 
   it('renders library/doc_ref, snippets, sources, cache/provider status, and discovery limits in order', () => {
@@ -911,9 +953,10 @@ describe('Native model text', () => {
     expect(snippets).toBeGreaterThan(docRef)
     expect(sources).toBeGreaterThan(snippets)
     expect(counts).toBeGreaterThan(sources)
-    expect(cache).toBeGreaterThan(counts)
-    expect(limitations).toBeGreaterThan(cache)
-    expect(discovery).toBeGreaterThan(limitations)
+    expect(cache).toBeGreaterThan(sources)
+    expect(counts).toBeGreaterThan(cache)
+    expect(limitations).toBeLessThan(library)
+    expect(discovery).toBeGreaterThan(counts)
     expect(text).toContain('useEffect cleanup snippet')
     expect(text).toContain('Expired Context7 cache data was used')
     expect(text).toContain('Context7 docs cache: stale, evicted 1')
@@ -928,24 +971,16 @@ describe('Native model text', () => {
     expect(renderDocsSearchText({ ...value, model_text_max_bytes: exactBytes })).toBe(unbounded)
     const over = renderDocsSearchText({ ...value, model_text_max_bytes: exactBytes - 1 })
     expect(Buffer.byteLength(over, 'utf8')).toBeLessThanOrEqual(exactBytes - 1)
-    expect(renderDocsSearchText({ ...value, model_text_max_bytes: 1 })).toBe('D')
-    const multibyteValue = {
+    expect(over).toContain('[Model text truncated by model_text_max_bytes.]')
+    expect(renderDocsSearchText({ ...value, model_text_max_bytes: 1 })).toBe('[')
+    const unicode = renderDocsSearchText({
       ...value,
-      snippets: [{ ...value.snippets[0], content: '界面 documentation' }],
-      model_text_max_bytes: 64 * 1024,
-    }
-    const multibyteText = renderDocsSearchText(multibyteValue)
-    const boundary = multibyteText.indexOf('界')
-    expect(boundary).toBeGreaterThan(0)
-    const beforeBytes = Buffer.byteLength(multibyteText.slice(0, boundary), 'utf8')
-    expect(renderDocsSearchText({
-      ...multibyteValue,
-      model_text_max_bytes: beforeBytes + 2,
-    })).toBe(multibyteText.slice(0, boundary))
-    expect(renderDocsSearchText({
-      ...multibyteValue,
-      model_text_max_bytes: beforeBytes + 3,
-    })).toBe(`${multibyteText.slice(0, boundary)}界`)
+      snippets: [{ content: '界🙂'.repeat(2000) }],
+      model_text_max_bytes: 1500,
+    })
+    expect(Buffer.byteLength(unicode, 'utf8')).toBeLessThanOrEqual(1500)
+    expect(unicode).toContain('界🙂')
+    expect(unicode).not.toContain(String.fromCodePoint(0xfffd))
   })
 
   it('renders not-found as an explicit state rather than an empty page', () => {

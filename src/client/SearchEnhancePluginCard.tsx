@@ -122,6 +122,10 @@ function cloneConfig(config: WebEditableConfig): WebEditableConfig {
     defaultProfile: config.defaultProfile,
     defaultDepth: config.defaultDepth,
     toolTimeoutMs: config.toolTimeoutMs,
+    retention: { ...config.retention },
+    budgets: Object.fromEntries(Object.entries(config.budgets).map(([profile, depths]) => [
+      profile, Object.fromEntries(Object.entries(depths).map(([depth, budget]) => [depth, { ...budget }])),
+    ])),
     toolDiscovery: { ...config.toolDiscovery },
     supplementalSearch: { ...config.supplementalSearch },
     searchApi: { ...config.searchApi },
@@ -396,6 +400,13 @@ export function SearchEnhancePluginCard({ t }: SearchEnhancePluginCardProps) {
     && snapshot !== undefined
     && validTimeouts(draft)
     && validSupplementalSearch(draft, snapshot.options.supplementalSearchMaxSources)
+    && Number.isInteger(draft.retention.docsSearchMaxResults)
+    && draft.retention.docsSearchMaxResults >= snapshot.options.docsSearchMinResults
+    && draft.retention.docsSearchMaxResults <= snapshot.options.docsSearchMaxResults
+    && Object.values(draft.budgets).every(depths => Object.values(depths).every(budget =>
+      Number.isInteger(budget.maxVisibleSources)
+      && budget.maxVisibleSources >= 0
+      && budget.maxVisibleSources <= snapshot.options.visibleSourcesMax))
   const editable = phase === 'ready' && snapshot?.writable === true && !saving
 
   const updateProvider = (provider: WebCredentialSlot, value: WebDiscoveryProviderConfig): void => {
@@ -609,6 +620,43 @@ export function SearchEnhancePluginCard({ t }: SearchEnhancePluginCardProps) {
                       options={snapshot.options.toolDiscoveryModes}
                       disabled={!editable}
                       onChange={mode => { setDraft(current => current === undefined ? current : { ...current, toolDiscovery: { mode } }); setFeedback('idle') }}
+                    />
+                  </Field>
+                  <Field label={t('maxVisibleSources')} overridden={isOverridden(snapshot.user, ['budgets', draft.defaultProfile, draft.defaultDepth, 'maxVisibleSources'])} t={t} hint={t('maxVisibleSourcesHint')}>
+                    <NumberInput
+                      label={t('maxVisibleSources')}
+                      value={draft.budgets[draft.defaultProfile]![draft.defaultDepth]!.maxVisibleSources}
+                      min={0}
+                      max={snapshot.options.visibleSourcesMax}
+                      disabled={!editable}
+                      onChange={maxVisibleSources => {
+                        setDraft(current => current === undefined ? current : {
+                          ...current,
+                          budgets: {
+                            ...current.budgets,
+                            [current.defaultProfile]: {
+                              ...current.budgets[current.defaultProfile],
+                              [current.defaultDepth]: { maxVisibleSources },
+                            },
+                          },
+                        })
+                        setFeedback('idle')
+                      }}
+                    />
+                  </Field>
+                  <Field label={t('docsSearchMaxResults')} overridden={isOverridden(snapshot.user, ['retention', 'docsSearchMaxResults'])} t={t} hint={t('docsSearchMaxResultsHint')}>
+                    <NumberInput
+                      label={t('docsSearchMaxResults')}
+                      value={draft.retention.docsSearchMaxResults}
+                      min={snapshot.options.docsSearchMinResults}
+                      max={snapshot.options.docsSearchMaxResults}
+                      disabled={!editable}
+                      onChange={docsSearchMaxResults => {
+                        setDraft(current => current === undefined ? current : {
+                          ...current, retention: { ...current.retention, docsSearchMaxResults },
+                        })
+                        setFeedback('idle')
+                      }}
                     />
                   </Field>
                   <Field label={t('toolTimeoutMs')} overridden={isOverridden(snapshot.user, ['toolTimeoutMs'])} t={t}>

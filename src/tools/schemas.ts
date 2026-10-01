@@ -143,6 +143,7 @@ export const WEB_SEARCH_OUTPUT_SCHEMA = {
     truncated: {
       type: 'boolean',
       required: true,
+      description: 'Canonical result/storage truncation. Native model-text byte clipping is separately marked in rendered text and presentation metadata.',
     },
     evidence_level: {
       type: 'string',
@@ -196,7 +197,7 @@ export const DOCS_SEARCH_PARAMETERS = {
     type: 'integer',
     enum: DOCS_SEARCH_MAX_RESULTS_VALUES,
     default: DOCS_SEARCH_DEFAULT_MAX_RESULTS,
-    description: 'Maximum results (1-20); defaults to 6 and may be lowered by Settings.',
+    description: 'Per-Provider collection and inline limit (1-20; default 6, capped by Settings). Not an exhaustive total: pagination only reads collected/retained sources. Increase this and rerun to collect more.',
   },
   force_refresh: {
     type: 'boolean',
@@ -270,7 +271,7 @@ const documentationCacheSchema = {
 
 export const DOCS_SEARCH_WARNING_CODES = [
   ...DOCUMENTATION_WARNING_CODES,
-  'sources_truncated',
+  'source_retention_truncated',
   'canonical_output_truncated',
 ] as const
 
@@ -336,7 +337,10 @@ export const DOCS_SEARCH_OUTPUT_SCHEMA = {
     returned_sources: { type: 'integer', required: true },
     total_snippets: { type: 'integer', required: true },
     returned_snippets: { type: 'integer', required: true },
-    truncated: { type: 'boolean', required: true },
+    truncated: {
+      type: 'boolean', required: true,
+      description: 'Canonical result/storage truncation. Native model-text byte clipping is separately marked in rendered text and presentation metadata.',
+    },
     evidence_level: { type: 'string', const: 'discovery', required: true },
     warnings: {
       type: 'array',

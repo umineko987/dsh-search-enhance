@@ -711,7 +711,8 @@ export class SearchOrchestrator {
       const collectionTruncated = providerTruncated || mainSourcesTruncated
       const visibleSourcesTruncated = visibleSources.length < prioritizedSources.length
       const sourcesTruncated = collectionTruncated || visibleSourcesTruncated
-      if (sourcesTruncated) warnings.push(warning('sources_truncated'))
+      if (collectionTruncated) warnings.push(warning('sources_truncated'))
+      if (visibleSourcesTruncated) warnings.push(warning('visible_sources_truncated'))
       if (mainSucceeded && rawAnswer.trim().length === 0 && prioritizedSources.length === 0) {
         warnings.push(warning('no_results'))
       }

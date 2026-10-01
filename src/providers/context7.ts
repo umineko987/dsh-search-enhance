@@ -251,7 +251,15 @@ export function selectContext7Library(
       library,
       score: context7LibraryScore(library, libraryName, queryTerms),
     }))
-    .filter(candidate => isContext7LibraryId(candidate.library.id))
+    .filter(({ library }) => {
+      if (!isContext7LibraryId(library.id)) return false
+      const wanted = normalizedMatchText(libraryName)
+      if (wanted.length === 0) return false
+      const segments = library.id.split('/').filter(Boolean).map(normalizedMatchText)
+      return normalizedMatchText(library.title) === wanted
+        || segments[1] === wanted
+        || segments.slice(0, 2).join('') === wanted
+    })
     .sort((left, right) => right.score - left.score || left.index - right.index)[0]?.library
 }
 

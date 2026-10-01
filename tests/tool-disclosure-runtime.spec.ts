@@ -8,7 +8,11 @@ import { SystemPrompt, renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import { ToolRuntime, defineTool, type ToolDefinition, type ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import { describe, expect, it } from 'vitest'
 
-import { TOOL_DISCOVERY_GUIDANCE, registerToolDiscoveryGuidance } from '../src/prompt/tool-discovery.js'
+import {
+  EVIDENCE_DISCIPLINE_GUIDANCE,
+  TOOL_DISCOVERY_GUIDANCE,
+  registerToolDiscoveryGuidance,
+} from '../src/prompt/tool-discovery.js'
 import { RESIDENT_TOOL_NAMES, installAgentToolDisclosure, type AgentToolDisclosureManager } from '../src/tool-discovery/index.js'
 import { createSearchToolsTool } from '../src/tools/search-tools.js'
 
@@ -141,6 +145,21 @@ async function assembly(harness: Harness, agent: Agent) {
 }
 
 describe('on-demand real tools with the DSH runtime', () => {
+  it('keeps routing, optional-tool timing, safety and evidence rules in shorter guidance', () => {
+    expect(TOOL_DISCOVERY_GUIDANCE).toMatch(/docs_search.*known library identity.*omit.*broad\/cross-project.*unknown-library.*auto uses Exa/u)
+    expect(TOOL_DISCOVERY_GUIDANCE).toContain('Never guess a Context7 library')
+    expect(TOOL_DISCOVERY_GUIDANCE).toMatch(/web_extract.*exactly one enabled Provider.*web_fetch.*structured responses/u)
+    expect(TOOL_DISCOVERY_GUIDANCE).toMatch(/Prefer HTTPS.*title\/app shell.*not usable page-body evidence.*instead of refetching/u)
+    expect(TOOL_DISCOVERY_GUIDANCE).toContain('Never bypass URL safety checks')
+    expect(TOOL_DISCOVERY_GUIDANCE).toMatch(/sources via search_tools for source_ref pagination.*site_map.*known site/u)
+    expect(TOOL_DISCOVERY_GUIDANCE).toMatch(/newly loaded search_sources\/web_map directly on the next model step.*reuse loaded tools.*not load preemptively/u)
+    expect(EVIDENCE_DISCIPLINE_GUIDANCE).toMatch(/one focused web_search.*docs_search for SDK\/API docs/u)
+    expect(EVIDENCE_DISCIPLINE_GUIDANCE).toMatch(/do not inspect local files\/settings\/sessions\/credentials unless the user explicitly asks/u)
+    expect(EVIDENCE_DISCIPLINE_GUIDANCE).toMatch(/answers\/snippets.*source metadata.*mapped URLs.*discovery, not claim-level evidence/u)
+    expect(EVIDENCE_DISCIPLINE_GUIDANCE).toMatch(/factual\/causal conclusions.*authoritative URLs with web_extract.*inference or unconfirmed, never source-stated fact/u)
+    expect(TOOL_DISCOVERY_GUIDANCE.length + EVIDENCE_DISCIPLINE_GUIDANCE.length).toBeLessThan(2189)
+  })
+
   it('loads on the next Native step, isolates Agents, and calls real tools directly', async () => {
     const harness = await createHarness()
     const a = await createAgent(harness.ctx, 'native-a')
@@ -148,6 +167,7 @@ describe('on-demand real tools with the DSH runtime', () => {
     try {
       expect(names(harness, a.agent)).toEqual([...RESIDENT_TOOL_NAMES].sort())
       expect(renderPrompt(await assembly(harness, a.agent))).toContain(TOOL_DISCOVERY_GUIDANCE)
+      expect(renderPrompt(await assembly(harness, a.agent))).toContain(EVIDENCE_DISCIPLINE_GUIDANCE)
       expect(harness.runtime.get('search_call', a.agent)).toBeUndefined()
       expect((await execute(harness, a.agent, 'web_map', { value: 'x' })).isError).toBe(true)
       expect(await load(harness, a, ['site_map'], 1, false)).toMatchObject({
@@ -181,6 +201,8 @@ describe('on-demand real tools with the DSH runtime', () => {
     const agent = await createAgent(harness.ctx, 'code-loading')
     try {
       const before = await assembly(harness, agent.agent)
+      expect(renderPrompt(before)).toContain(TOOL_DISCOVERY_GUIDANCE)
+      expect(renderPrompt(before)).toContain(EVIDENCE_DISCIPLINE_GUIDANCE)
       expect(before.tools.map(tool => tool.name)).toEqual(['run_code'])
       expect(renderPrompt(before)).not.toMatch(/\n\s+web_map: \{/u)
       agent.session.append('step/start', { turn: 1, step: 1 })

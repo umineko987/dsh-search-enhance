@@ -64,6 +64,9 @@ export const DOCUMENTATION_WARNING_CODES = [
   'cache_stale',
   'cache_evicted',
   'provider_result_truncated',
+  'library_not_found',
+  'collection_limit_reached',
+  'visible_sources_truncated',
   'no_results',
 ] as const
 export type DocumentationWarningCode = (typeof DOCUMENTATION_WARNING_CODES)[number]
@@ -891,11 +894,16 @@ export class DocumentationSearchService extends Service {
     const qualitySources = applySourceQuality(validated.query, compatibleSources)
     const sources = Object.freeze(qualitySources.slice(0, input.maxResults))
     const snippets = Object.freeze(contextOutcome.snippets.slice(0, input.maxResults))
-    const truncated = contextOutcome.truncated
-      || exaOutcome.truncated
-      || sources.length < qualitySources.length
+    const providerTruncated = contextOutcome.truncated || exaOutcome.truncated
+    const visibleSourcesTruncated = sources.length < qualitySources.length
+    const truncated = providerTruncated
+      || visibleSourcesTruncated
       || snippets.length < contextOutcome.snippets.length
-    if (truncated) warnings.push(fixedWarning('provider_result_truncated'))
+    if (providerTruncated) warnings.push(fixedWarning('provider_result_truncated'))
+    if (visibleSourcesTruncated) warnings.push(fixedWarning('visible_sources_truncated'))
+    if (exaOutcome.state === 'complete' && exaOutcome.sources.length >= input.maxResults) {
+      warnings.push(fixedWarning('collection_limit_reached', { provider: 'exa', count: input.maxResults }))
+    }
 
     const completedValidPath = contextOutcome.completedValidPath || exaOutcome.completedValidPath
     if (sources.length === 0 && snippets.length === 0 && !completedValidPath) {
@@ -924,11 +932,11 @@ export class DocumentationSearchService extends Service {
       cachePath('skipped', 0, 'provider_not_selected'),
     )
     const persistence = Object.freeze({
-      collectionTruncated: truncated,
+      collectionTruncated: exaOutcome.truncated,
       depth: 'compact' as const,
       profile: 'coding_docs' as const,
       query: validated.query,
-      sources,
+      sources: Object.freeze(qualitySources),
     })
     return Object.freeze({
       attempts,
@@ -1035,6 +1043,7 @@ export class DocumentationSearchService extends Service {
 
     if (selectedLibrary?.id === undefined || !isContext7LibraryId(selectedLibrary.id)) {
       docsReport = cachePath('skipped', 0, 'library_not_found')
+      warnings.push(fixedWarning('library_not_found', { provider: 'context7', path: 'resolve' }))
       attempts.push(skippedAttempt('context7-docs'))
       return frozenPathOutcome({
         attempts,

@@ -6,6 +6,8 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 
 import {
   Config as SearchEnhanceConfig,
+  DOCS_SEARCH_DEFAULT_MAX_RESULTS,
+  DOCS_SEARCH_MAX_RESULTS_LIMIT,
   PARALLEL_SEARCH_MODES,
   SUPPLEMENTAL_SEARCH_MAX_SOURCES,
   SEARCH_API_PROTOCOLS,
@@ -110,6 +112,13 @@ function projectConfig(config: SearchEnhanceConfigValue): WebEditableConfig {
     defaultProfile: config.defaultProfile,
     defaultDepth: config.defaultDepth,
     toolTimeoutMs: config.toolTimeoutMs,
+    retention: { docsSearchMaxResults: config.retention.docsSearchMaxResults },
+    budgets: Object.fromEntries(Object.entries(config.budgets).map(([profile, depths]) => [
+      profile,
+      Object.fromEntries(Object.entries(depths).map(([depth, budget]) => [
+        depth, { maxVisibleSources: budget.maxVisibleSources },
+      ])),
+    ])),
     toolDiscovery: { mode: config.toolDiscovery.mode },
     supplementalSearch: { ...config.supplementalSearch },
     searchApi: {
@@ -294,6 +303,9 @@ export async function readWebConfigSnapshot(
       parallelSearchModes: [...PARALLEL_SEARCH_MODES],
       proxyUrlMaxCharacters: WEB_EXTRACT_PROXY_URL_MAX_CHARACTERS,
       supplementalSearchMaxSources: SUPPLEMENTAL_SEARCH_MAX_SOURCES,
+      docsSearchMinResults: DOCS_SEARCH_DEFAULT_MAX_RESULTS,
+      docsSearchMaxResults: DOCS_SEARCH_MAX_RESULTS_LIMIT,
+      visibleSourcesMax: 1000,
     },
     credentials: Object.fromEntries(credentialEntries) as Record<WebCredentialSlot, WebCredentialState>,
     diagnostics: {

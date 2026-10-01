@@ -11,6 +11,9 @@ import {
   DOCUMENTATION_CACHE_SKIP_REASONS,
 } from '../documentation/index.js'
 import {
+  isDocsSearchModelTextTruncated,
+  isWebSearchModelTextTruncated,
+  renderDocsSearchLimitations,
   isWebExtractModelTextTruncated,
   isWebMapModelTextTruncated,
   renderWebSearchLimitations,
@@ -55,6 +58,7 @@ interface DocsSearchCardCachePath {
 interface DocsSearchCardMeta {
   readonly version: 1
   readonly type: 'docs_search'
+  readonly limitations?: string
   readonly sources: readonly WebSource[]
   readonly snippets: readonly DocsSearchCardSnippet[]
   readonly cache: {
@@ -154,7 +158,7 @@ export function webSearchPresentationMeta(
     source_produced: value.source_ref !== undefined,
     ...(answer === undefined ? {} : { answer }),
     sources: value.sources.map(source => ({ ...source })),
-    truncated: value.truncated,
+    truncated: value.truncated || isWebSearchModelTextTruncated(value),
   }
 }
 
@@ -212,17 +216,19 @@ export function docsSearchPresentationMeta(
   _args: DocsSearchArgs,
   value: DocsSearchOutput,
 ): JsonValue {
+  const limitations = renderDocsSearchLimitations(value)
   return {
     version: 1,
     type: 'docs_search',
     source_produced: value.source_ref !== undefined,
+    ...(limitations === undefined ? {} : { limitations }),
     sources: value.sources.map(source => ({ ...source })),
     snippets: value.snippets.map(snippet => ({ ...snippet })),
     cache: {
       resolve: { ...value.cache.resolve },
       docs: { ...value.cache.docs },
     },
-    truncated: value.truncated,
+    truncated: value.truncated || isDocsSearchModelTextTruncated(value),
   }
 }
 
@@ -275,6 +281,7 @@ function parseDocsSearchMeta(value: unknown): DocsSearchCardMeta | undefined {
     || value.version !== 1
     || value.type !== 'docs_search'
     || typeof value.truncated !== 'boolean'
+    || !isOptionalString(value.limitations)
     || !Array.isArray(value.snippets)
     || !isRecord(value.cache)
   ) return undefined
@@ -291,6 +298,7 @@ function parseDocsSearchMeta(value: unknown): DocsSearchCardMeta | undefined {
   return {
     version: 1,
     type: 'docs_search',
+    ...(value.limitations === undefined ? {} : { limitations: value.limitations }),
     sources,
     snippets,
     cache: { resolve, docs },
@@ -308,8 +316,11 @@ function docsCacheLabel(meta: DocsSearchCardMeta): string | undefined {
 }
 
 function docsCardAnswer(meta: DocsSearchCardMeta): string | undefined {
-  if (meta.snippets.length === 0) return undefined
-  const lines = ['Documentation snippets (discovery metadata; not fetched page bodies):']
+  if (meta.snippets.length === 0) return meta.limitations
+  const lines = [
+    ...(meta.limitations === undefined ? [] : [meta.limitations, '']),
+    'Documentation snippets (discovery metadata; not fetched page bodies):',
+  ]
   for (let index = 0; index < meta.snippets.length; index += 1) {
     const snippet = meta.snippets[index]
     if (snippet === undefined) continue
@@ -331,7 +342,10 @@ export function presentDocsSearchResult(
   const label = docsCacheLabel(meta)
   const title = `Docs${label === undefined ? '' : ` (${label})`}: ${args.query}`
   if (meta.sources.length === 0 && meta.snippets.length === 0) {
-    return { card: 'generic', title: `No documentation results: ${args.query}` }
+    const reason = meta.cache.docs.reason === 'library_not_found'
+      ? 'No matching Context7 library; check library_name or supply library_id'
+      : 'No documentation results'
+    return { card: 'generic', title: `${reason}: ${args.query}` }
   }
   const answer = docsCardAnswer(meta)
   return {

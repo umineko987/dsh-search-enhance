@@ -24,12 +24,17 @@ export function sourceDisplayLabel(source: { readonly title?: string; readonly u
 }
 
 function renderWithBoundedNotice(text: string, notice: string | undefined, maximumBytes: number): string {
-  if (notice === undefined) return truncateUtf8(text, maximumBytes).text
   const separator = '\n\n'
-  const prefixBudget = maximumBytes - utf8ByteLength(notice) - utf8ByteLength(separator)
-  if (prefixBudget <= 0) return truncateUtf8(notice, maximumBytes).text
+  const complete = notice === undefined ? text : `${text}${separator}${notice}`
+  if (utf8ByteLength(complete) <= maximumBytes) return complete
+  const marker = '[Model text truncated by model_text_max_bytes.]'
+  const suffix = notice === undefined
+    ? marker
+    : `${marker}\nCounts below describe the canonical result, not fully displayed text.${separator}${notice}`
+  const prefixBudget = maximumBytes - utf8ByteLength(suffix) - utf8ByteLength(separator)
+  if (prefixBudget <= 0) return truncateUtf8(suffix, maximumBytes).text
   const prefix = truncateUtf8(text, prefixBudget).text
-  return prefix.length === 0 ? notice : `${prefix}${separator}${notice}`
+  return prefix.length === 0 ? suffix : `${prefix}${separator}${suffix}`
 }
 
 function sourceLoadingNotice(sourceRef: string | undefined): string | undefined {
@@ -59,7 +64,11 @@ function warningText(warning: WebSearchWarning): string {
     case 'answer_truncated':
       return 'The generated answer was truncated.'
     case 'sources_truncated':
-      return 'The source collection or retained source record was truncated.'
+      return 'Source collection reached a Provider limit; uncollected sources cannot be recovered by pagination. Rerun with a larger collection limit where supported.'
+    case 'visible_sources_truncated':
+      return 'Only an inline source prefix is shown; use source_ref to page retained sources.'
+    case 'source_retention_truncated':
+      return 'Source storage dropped some collected sources at its count/byte limit; pagination cannot recover those entries.'
     case 'canonical_output_truncated':
       return 'The canonical search value was truncated to its configured limit.'
     case 'no_results':
@@ -101,9 +110,7 @@ function sourceSummary(value: WebSearchOutput): string {
 /** Shared model/card notice; Provider failures precede generic truncation information. */
 export function renderWebSearchLimitations(value: WebSearchOutput): string | undefined {
   const lines = value.warnings.map(warningText)
-  if (value.truncated) {
-    lines.push('The answer, visible sources, Provider collection, or retained source record was bounded.')
-  }
+  if (value.truncated && lines.length === 0) lines.push('The canonical search result was bounded.')
   if (lines.length === 0) return undefined
   return `Limitations\n${lines.map(line => `- ${line}`).join('\n')}`
 }
@@ -120,8 +127,6 @@ export function renderWebSearchText(
     renderWebSearchLimitations(value),
     answerSection(value),
     sourceSection(value),
-    sourceSummary(value),
-    DISCOVERY_NOTICE,
   ].filter((section): section is string => section !== undefined)
   const complete = sections.join('\n\n')
   const maximumBytes = Number.isSafeInteger(value.model_text_max_bytes)
@@ -130,9 +135,17 @@ export function renderWebSearchText(
     : 0
   return renderWithBoundedNotice(
     complete,
-    sourceLoadingNotice(value.source_ref),
+    [sourceSummary(value), DISCOVERY_NOTICE, sourceLoadingNotice(value.source_ref)]
+      .filter((section): section is string => section !== undefined).join('\n\n'),
     maximumBytes,
   )
+}
+
+export function isWebSearchModelTextTruncated(value: WebSearchOutput): boolean {
+  const maximumBytes = Number.isSafeInteger(value.model_text_max_bytes) && value.model_text_max_bytes > 0
+    ? value.model_text_max_bytes : 0
+  return utf8ByteLength(renderWebSearchText({ ...value, model_text_max_bytes: Number.MAX_SAFE_INTEGER }))
+    > maximumBytes
 }
 
 function docsWarningText(warning: DocsSearchWarning): string {
@@ -152,8 +165,14 @@ function docsWarningText(warning: DocsSearchWarning): string {
       return `A documentation Provider bounded its discovery result${detail}.`
     case 'no_results':
       return 'Documentation search completed without matching snippets or sources.'
-    case 'sources_truncated':
-      return 'The durable source record retained only a bounded source prefix.'
+    case 'library_not_found':
+      return 'No Context7 library matched library_name. No unrelated library was selected; check the name or supply an exact library_id.'
+    case 'collection_limit_reached':
+      return `The Provider returned its requested limit (${warning.count ?? 'max_results'}). Counts cover this request, not all available matches. Increase max_results and rerun to collect more; pagination only reads retained records.`
+    case 'visible_sources_truncated':
+      return 'Only an inline source prefix is shown; use source_ref to page retained sources.'
+    case 'source_retention_truncated':
+      return 'Source storage dropped some collected sources at its count/byte limit; pagination cannot recover those entries.'
     case 'canonical_output_truncated':
       return 'The documentation result was shortened to its configured canonical JSON limit.'
   }
@@ -211,10 +230,14 @@ function docsSourceSection(value: DocsSearchOutput): string | undefined {
   return lines.join('\n')
 }
 
+export function renderDocsSearchLimitations(value: DocsSearchOutput): string | undefined {
+  const lines = value.warnings.map(docsWarningText)
+  if (value.truncated && lines.length === 0) lines.push('The canonical documentation result was bounded.')
+  return lines.length === 0 ? undefined : `Limitations\n${lines.map(line => `- ${line}`).join('\n')}`
+}
+
 /** Pure Native projection for docs_search; it never reads Settings, cache, storage, or the network. */
-export function renderDocsSearchText(
-  value: DocsSearchOutput,
-): string {
+export function renderDocsSearchText(value: DocsSearchOutput): string {
   const status = value.state === 'partial' ? 'partial' : 'complete'
   const explanation = value.state === 'partial'
     ? 'Some documentation paths failed or stale cache data was used; available discovery results follow.'
@@ -223,39 +246,35 @@ export function renderDocsSearchText(
       : 'Documentation discovery completed; bounded discovery results follow.'
   const sections = [
     `Documentation search (${status})\n${explanation}`,
+    renderDocsSearchLimitations(value),
     docsLibrarySection(value),
     docsSnippetSection(value),
     docsSourceSection(value),
-    [
-      `Sources shown: ${value.returned_sources}/${value.total_sources}`,
-      `Snippets shown: ${value.returned_snippets}/${value.total_snippets}`,
-    ].join('\n'),
     [
       docsCachePathText('Context7 resolve cache', value.cache.resolve),
       docsCachePathText('Context7 docs cache', value.cache.docs),
       docsProviderSection(value),
     ].join('\n'),
-    value.truncated || value.warnings.length > 0
-      ? [
-          'Limitations',
-          ...(value.truncated
-            ? ['- Documentation snippets, visible sources, Provider collection, or retained sources were bounded.']
-            : []),
-          ...value.warnings.map(warning => `- ${docsWarningText(warning)}`),
-        ].join('\n')
-      : undefined,
-    'Evidence level: discovery. Documentation snippets and source summaries are discovery metadata, not verified fetched page-body evidence; inspect an exact source page before relying on a claim.',
   ].filter((section): section is string => section !== undefined)
-  const complete = sections.join('\n\n')
+  const notice = [
+    `Sources shown: ${value.returned_sources}/${value.total_sources}`,
+    `Snippets shown: ${value.returned_snippets}/${value.total_snippets}`,
+    'Counts cover collected results for this request, not all available matches.',
+    'Evidence level: discovery. Documentation snippets and source summaries are not verified fetched page-body evidence.',
+    sourceLoadingNotice(value.source_ref),
+  ].filter((section): section is string => section !== undefined).join('\n\n')
   const maximumBytes = Number.isSafeInteger(value.model_text_max_bytes)
     && value.model_text_max_bytes > 0
     ? value.model_text_max_bytes
     : 0
-  return renderWithBoundedNotice(
-    complete,
-    sourceLoadingNotice(value.source_ref),
-    maximumBytes,
-  )
+  return renderWithBoundedNotice(sections.join('\n\n'), notice, maximumBytes)
+}
+
+export function isDocsSearchModelTextTruncated(value: DocsSearchOutput): boolean {
+  const maximumBytes = Number.isSafeInteger(value.model_text_max_bytes) && value.model_text_max_bytes > 0
+    ? value.model_text_max_bytes : 0
+  return utf8ByteLength(renderDocsSearchText({ ...value, model_text_max_bytes: Number.MAX_SAFE_INTEGER }))
+    > maximumBytes
 }
 
 function renderPageSources(page: SearchSourcesFound): string | undefined {
@@ -287,13 +306,15 @@ export function renderSearchSourcesText(value: SearchSourcesOutput): string {
   const sections = [
     renderPageSources(value),
     [
-      `Page returned: ${value.returned}; retained total: ${value.total}; original total: ${value.total_before_retention}.`,
+      `Page returned: ${value.returned}; retained total: ${value.total}; collected total before storage: ${value.total_before_retention}.`,
       value.has_more && value.next_offset !== undefined
         ? `More sources are available at offset ${value.next_offset}.`
         : 'No later retained source page is available.',
-      value.truncated
-        ? 'The retained source record is truncated.'
-        : undefined,
+      value.total < value.total_before_retention
+        ? 'Source storage dropped collected entries; pagination cannot recover them.'
+        : value.truncated
+          ? 'Upstream source collection was bounded; pagination cannot recover uncollected entries.'
+          : undefined,
       value.page_byte_limited
         ? 'This page was shortened by its canonical JSON byte limit.'
         : undefined,

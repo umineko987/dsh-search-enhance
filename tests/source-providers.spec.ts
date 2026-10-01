@@ -255,6 +255,13 @@ describe('Context7 and Exa documentation Providers', () => {
     )?.id).toBe('/reactjs/react.dev')
   })
 
+  it('matches project/scoped package identities without treating owners or versions as libraries', () => {
+    const libraries = [{ id: '/owner/package/1.2.3', title: 'Friendly display name' }]
+    expect(selectContext7Library(libraries, 'package')?.id).toBe('/owner/package/1.2.3')
+    expect(selectContext7Library(libraries, '@owner/package')?.id).toBe('/owner/package/1.2.3')
+    expect(selectContext7Library(libraries, 'owner')).toBeUndefined()
+    expect(selectContext7Library(libraries, '1.2.3')).toBeUndefined()
+  })
   it('sends the migrated Exa neural-search protocol and parses discovery metadata', async () => {
     const credentialFixture = credentials(['exa-secret'])
     let requestBody: Record<string, unknown> | undefined

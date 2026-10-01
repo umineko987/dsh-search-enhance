@@ -112,7 +112,9 @@ export function projectDocsSearchOutput(
 ): DocsSearchOutput {
   const warnings = result.warnings.map(outputWarning)
   const storageTruncated = commit?.record.truncated === true
-  if (storageTruncated) ensureWarning(warnings, 'sources_truncated')
+  if (commit !== undefined && commit.record.sources.length < commit.record.totalBeforeRetention) {
+    ensureWarning(warnings, 'source_retention_truncated')
+  }
   const sources = result.sources.map(source => ({
     url: source.url,
     ...(source.title === undefined ? {} : { title: source.title }),

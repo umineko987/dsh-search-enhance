@@ -8,8 +8,6 @@
 
 > 你需要自行提供所选服务的端点和凭据，插件不内置任何 API Key。`web_search` 需要 Grok-compatible 端点；Context7、Exa、Tavily 和 Firecrawl 均为可选 Provider。
 
-![DSH Web 会话：搜索、检索文档、提取官方页面并生成带来源的回答](https://raw.githubusercontent.com/umineko987/dsh-search-enhance/main/assets/search-workflow.png)
-
 ## 主要特点
 
 - `web_search` 使用 Grok-compatible 端点生成主要回答，并行调用用户勾选的全部补充搜索 Provider（Exa、Tavily、Firecrawl），每家使用独立的来源数量上限。

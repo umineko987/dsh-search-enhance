@@ -1045,7 +1045,8 @@ Sources:
       totalSources: 2,
       truncated: true,
     })
-    expect(result.canonical.warnings.map(item => item.code)).toEqual(['answer_truncated', 'sources_truncated'])
+    expect(result.canonical.warnings.map(item => item.code)).toEqual(['answer_truncated', 'visible_sources_truncated'])
+    expect(result.persistence.collectionTruncated).toBe(false)
   })
 
   it('keeps the merged persistence candidate unchanged by canonical byte truncation', async () => {

@@ -289,6 +289,28 @@ describe('Search Enhance Web configuration Host bridge', () => {
     expect(text).not.toContain('must-not-change')
   })
 
+  it('edits initial visibility and the docs request ceiling without changing collection or text budgets', async () => {
+    const harness = await createHarness()
+    const before = Config(harness.editor.configuration()[0]!.entry.options.config as never)
+    const updated = await mutate(harness, { expectedRevision: 0, mutations: [
+      { op: 'set', path: ['budgets', 'auto', 'compact', 'maxVisibleSources'], value: 16 },
+      { op: 'set', path: ['retention', 'docsSearchMaxResults'], value: 10 },
+    ] })
+    expect(updated.status).toBe(200)
+    const snapshot = await updated.json() as WebConfigSnapshot
+    expect(snapshot.value.budgets.auto?.compact?.maxVisibleSources).toBe(16)
+    expect(snapshot.value.retention.docsSearchMaxResults).toBe(10)
+    expect(snapshot.user?.budgets?.auto?.compact).toEqual({ maxVisibleSources: 16 })
+    const after = Config(harness.editor.configuration()[0]!.entry.options.config as never)
+    expect(after.budgets.auto.compact.maxModelTextBytes).toBe(before.budgets.auto.compact.maxModelTextBytes)
+    expect(after.supplementalSearch).toEqual(before.supplementalSearch)
+    for (const mutation of [
+      { op: 'set', path: ['budgets', 'auto', 'compact', 'maxVisibleSources'], value: 1001 },
+      { op: 'set', path: ['retention', 'docsSearchMaxResults'], value: 21 },
+    ]) {
+      expect((await mutate(harness, { expectedRevision: 1, mutations: [mutation] })).status).toBe(422)
+    }
+  })
   it('edits supplemental selections and extract allowlist independently with bounded limits', async () => {
     const harness = await createHarness()
     const snapshot = await (await fetch(`${harness.origin}${WEB_CONFIG_PATH}`)).json() as WebConfigSnapshot

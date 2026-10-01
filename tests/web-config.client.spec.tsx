@@ -71,6 +71,10 @@ function snapshot(overrides: Partial<WebConfigSnapshot> = {}): WebConfigSnapshot
       defaultProfile: 'auto',
       defaultDepth: 'compact',
       toolTimeoutMs: 180_000,
+      retention: { docsSearchMaxResults: 20 },
+      budgets: Object.fromEntries(['auto', 'coding_docs', 'code_examples', 'project_research', 'academic', 'fact_check']
+        .map(profile => [profile, Object.fromEntries(['compact', 'normal', 'deep']
+          .map(depth => [depth, { maxVisibleSources: depth === 'compact' ? 8 : 12 }]))])),
       toolDiscovery: { mode: 'progressive' },
       supplementalSearch: { exa: false, tavily: false, firecrawl: false, parallel: false, maxSourcesPerProvider: 5 },
       searchApi: {
@@ -119,6 +123,9 @@ function snapshot(overrides: Partial<WebConfigSnapshot> = {}): WebConfigSnapshot
       parallelSearchModes: ['turbo', 'fast', 'basic', 'advanced'],
       proxyUrlMaxCharacters: 2048,
       supplementalSearchMaxSources: 100,
+      docsSearchMinResults: 6,
+      docsSearchMaxResults: 20,
+      visibleSourcesMax: 1000,
     },
     credentials: {
       searchApi: credentialState('TEST_GROK_SEARCH_KEY', true, 'file'),
@@ -291,6 +298,34 @@ describe('Search Enhance browser contribution', () => {
     expect(document.querySelector('details')).toBeNull()
   })
 
+  it('explains and saves display and request limits as independent settings', async () => {
+    const initial = snapshot()
+    let patchBody: unknown
+    vi.stubGlobal('fetch', vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      if (requestMethod(init) === 'GET') return response(initial)
+      patchBody = JSON.parse(String(init?.body)) as unknown
+      return response(snapshot({ revision: 1 }))
+    }))
+    render(<SearchEnhancePluginCard t={t as SearchEnhancePluginCardProps['t']} />)
+    await openCard()
+    expect(screen.getByText(en.maxVisibleSourcesHint)).toBeTruthy()
+    expect(screen.getByText(en.docsSearchMaxResultsHint)).toBeTruthy()
+    fireEvent.change(screen.getByLabelText(en.docsSearchMaxResults), { target: { value: '21' } })
+    expect((screen.getByRole('button', { name: en.save }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.change(screen.getByLabelText(en.docsSearchMaxResults), { target: { value: '10' } })
+    fireEvent.change(screen.getByLabelText(en.maxVisibleSources), { target: { value: '16' } })
+    fireEvent.change(screen.getByRole('combobox', { name: /Default depth/ }), { target: { value: 'normal' } })
+    expect((screen.getByLabelText(en.maxVisibleSources) as HTMLInputElement).value).toBe('12')
+    fireEvent.change(screen.getByRole('combobox', { name: /Default depth/ }), { target: { value: 'compact' } })
+    expect((screen.getByLabelText(en.maxVisibleSources) as HTMLInputElement).value).toBe('16')
+    fireEvent.click(screen.getByRole('button', { name: en.save }))
+    expect(await screen.findByText(en.savedLive)).toBeTruthy()
+    expect(patchBody).toEqual({ expectedRevision: 0, mutations: [
+      { op: 'set', path: ['retention', 'docsSearchMaxResults'], value: 10 },
+      { op: 'set', path: ['budgets', 'auto', 'compact', 'maxVisibleSources'], value: 16 },
+    ] })
+    expect(initial.value.budgets.auto?.compact?.maxVisibleSources).toBe(8)
+  })
   it('saves endpoints and connection settings from their credential cards without sending keys', async () => {
     const initial = snapshot()
     const next = snapshot({ revision: 1, value: {

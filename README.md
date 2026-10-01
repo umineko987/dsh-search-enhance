@@ -8,8 +8,6 @@ The plugin presents search results, sources, and page content separately. Search
 
 > Bring your own endpoints and credentials. The plugin ships no API keys. A Grok-compatible endpoint is required for `web_search`; Context7, Exa, Tavily, and Firecrawl are optional.
 
-![A DSH Web session that searches, checks documentation, extracts an official page, and returns a sourced answer](https://raw.githubusercontent.com/umineko987/dsh-search-enhance/main/assets/search-workflow.png)
-
 ## Key characteristics
 
 - `web_search` uses the Grok-compatible endpoint for the main answer and runs all user-selected supplemental Providers (Exa, Tavily, Firecrawl) in parallel, with an independent per-Provider source limit.

@@ -21,6 +21,8 @@ export const SEARCH_WARNING_CODES = [
   'cache_evicted',
   'answer_truncated',
   'sources_truncated',
+  'visible_sources_truncated',
+  'source_retention_truncated',
   'canonical_output_truncated',
   'no_results',
 ] as const
