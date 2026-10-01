@@ -1,6 +1,6 @@
 {
   "name": "dsh-search-enhance",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Bounded search, documentation, extraction, and on-demand source pagination and site mapping for DeepSeek Harness",
   "repository": {
     "type": "git",
@@ -76,7 +76,9 @@
     "cordis.patch.yml",
     "README.md"
   ],
-  "sideEffects": ["./client/client.js"],
+  "sideEffects": [
+    "./client/client.js"
+  ],
   "scripts": {
     "clean": "node -e \"const { rmSync } = require('node:fs'); for (const path of ['lib', 'client']) rmSync(path, { recursive: true, force: true })\"",
     "build": "npm run clean && tsc -p tsconfig.build.json && tsdown && tsc -p tsconfig.client.build.json",
@@ -122,14 +124,30 @@
     "react": "^18.2.0"
   },
   "peerDependenciesMeta": {
-    "@deepseek-ai/dsh-client-locale": { "optional": true },
-    "@deepseek-ai/dsh-client-ui-primitives": { "optional": true },
-    "@deepseek-ai/dsh-client-ui-settings": { "optional": true },
-    "@deepseek-ai/dsh-client-ui-renderer": { "optional": true },
-    "@deepseek-ai/dsh-client-ui-settings-plugins": { "optional": true },
-    "@deepseek-ai/dsh-client-ui-slots": { "optional": true },
-    "@deepseek-ai/dsh-host-webserver": { "optional": true },
-    "react": { "optional": true }
+    "@deepseek-ai/dsh-client-locale": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-primitives": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-settings": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-renderer": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-settings-plugins": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-slots": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-host-webserver": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    }
   },
   "dependencies": {
     "@deepseek-ai/dsh-util-values": "0.2.0-rc.2",
