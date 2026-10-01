@@ -2,19 +2,19 @@
 
 English | [简体中文](README.zh.md)
 
-`dsh-search-enhance` is a search extension for DeepSeek Harness. It uses a Grok-compatible Search API for primary web answers and can optionally use Context7, Exa, Tavily, and Firecrawl for documentation lookup, supplementary discovery, page extraction, and site mapping.
+`dsh-search-enhance` is a search extension for DeepSeek Harness. It uses a Grok-compatible Search API for primary web answers and can optionally use Context7, Exa, Tavily, Firecrawl, and Parallel for documentation lookup, supplementary discovery, page extraction, and site mapping.
 
 The plugin presents search results, sources, and page content separately. Searches return an answer or documentation snippets with source links; you can ask for more sources when needed. To check important details, ask it to read the original page. Search snippets remain distinct from fetched page content.
 
-> Bring your own endpoints and credentials. The plugin ships no API keys. A Grok-compatible endpoint is required for `web_search`; Context7, Exa, Tavily, and Firecrawl are optional.
+> Bring your own endpoints and credentials. The plugin ships no API keys. A Grok-compatible endpoint is required for `web_search`; Context7, Exa, Tavily, Firecrawl, and Parallel are optional.
 
 ## Key characteristics
 
-- `web_search` uses the Grok-compatible endpoint for the main answer and runs all user-selected supplemental Providers (Exa, Tavily, Firecrawl) in parallel, with an independent per-Provider source limit.
+- `web_search` uses the Grok-compatible endpoint for the main answer and runs all user-selected supplemental Providers (Exa, Tavily, Firecrawl, Parallel) in parallel, with an independent per-Provider source limit.
 - Sources are normalized, de-duplicated, and reordered using source category, requested version, and publication-time signals before they are shown.
 - `source_ref` keeps the complete source record in private durable storage, allowing the Agent to paginate beyond the links included in the initial result.
 - `docs_search` uses Context7 only with an explicit `library_name` or `library_id`; requests without a library identity use Exa discovery.
-- `web_extract` requires one explicit `provider` from the user-enabled set: `tavily_extract`, `firecrawl_scrape`, `smart_direct`, or `direct`. It reports the route, evidence level, and available page metadata; failures never switch Providers.
+- `web_extract` requires one explicit `provider` from the user-enabled set: `tavily_extract`, `firecrawl_scrape`, `parallel_extract`, `smart_direct`, or `direct`. It reports the route, evidence level, and available page metadata; failures never switch Providers.
 - Ask for more sources or related pages on a specific website when needed; no manual tool loading is required.
 - Supplemental search defaults to no Providers selected. Unselected Providers are never requested; missing credentials and failures of selected Providers remain visible as warnings.
 
@@ -84,10 +84,11 @@ Configure only the routes you need.
 | Exa | Broad documentation and supplementary discovery | `EXA_API_KEY` | No |
 | Tavily | Supplementary search, page extraction, and site mapping | `TAVILY_API_KEY` | No |
 | Firecrawl | Supplementary search and page extraction | `FIRECRAWL_API_KEY` | No |
+| Parallel | Supplementary search and Markdown page extraction | `PARALLEL_API_KEY` | No |
 
 In the plugin settings, select any combination of **supplemental search Providers**. Each selected Provider runs alongside the main search, using `supplementalSearch.maxSourcesPerProvider` (default `5`, maximum `100`). This selection applies to all search profiles.
 
-Separately, select the **extraction Providers** available to the Agent. Each `web_extract` call must choose exactly one enabled Provider, for example `{ "url": "https://example.com/", "provider": "direct", "format": "markdown" }`. Disabled, unconfigured, unsupported, or failed Providers do not trigger automatic fallback. Extraction Providers are enabled by default; disable any you do not want the Agent to use.
+Separately, select the **extraction Providers** available to the Agent. Each `web_extract` call must choose exactly one enabled Provider, for example `{ "url": "https://example.com/", "provider": "direct", "format": "markdown" }`. Disabled, unconfigured, unsupported, or failed Providers do not trigger automatic fallback. Parallel extraction supports Markdown only and is disabled by default; enable it explicitly. Other extraction Providers are enabled by default; disable any you do not want the Agent to use.
 
 For `docs_search`, Context7 requires an explicit `library_name` or `library_id`. Without one, `provider: "auto"` uses Exa instead of guessing a package name from the full question.
 
