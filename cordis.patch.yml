@@ -1,3 +1,7 @@
 - insert:
+    - id: search-enhance-subagents
+      name: '@deepseek-ai/dsh-subagent'
+      disabled: !!js |-
+        ctx[Symbol.for('cordis.entry')].parent.data.some(e => e.name === '@deepseek-ai/dsh-subagent' && e.id !== 'search-enhance-subagents' && !e.disabled)
     - id: search-enhance
       name: 'dsh-search-enhance'

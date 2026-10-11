@@ -1,4 +1,3 @@
-import type { SearchDepth, SearchProfile } from '../config.js'
 
 export const SOURCE_PROVIDERS = [
   'search-api',
@@ -56,8 +55,6 @@ export interface SourceCallIdentity {
 /** Complete merged source candidate passed from orchestration to the durable layer. */
 export interface SourceRecordCandidate {
   readonly query: string
-  readonly profile: SearchProfile
-  readonly depth: SearchDepth
   readonly sources: readonly CanonicalSource[]
   /** A Provider had already bounded its collection before this layer observed it. */
   readonly collectionTruncated: boolean
@@ -69,8 +66,6 @@ export interface StoredSourceRecord {
   readonly sourceRef: SourceRef
   readonly ownerSessionId: string
   readonly query: string
-  readonly profile: SearchProfile
-  readonly depth: SearchDepth
   readonly call: SourceCallIdentity
   readonly sources: readonly CanonicalSource[]
   readonly totalBeforeRetention: number

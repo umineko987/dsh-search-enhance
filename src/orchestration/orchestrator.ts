@@ -441,10 +441,7 @@ export class SearchOrchestrator {
     }
     let strategy: ResolvedSearchStrategy
     try {
-      strategy = resolveSearchStrategy(config, {
-        ...(input.depth === undefined ? {} : { depth: input.depth }),
-        ...(input.profile === undefined ? {} : { profile: input.profile }),
-      })
+      strategy = resolveSearchStrategy(config)
     } catch (error) {
       throw new ProviderError({
         capability: 'main_search',
@@ -733,10 +730,8 @@ export class SearchOrchestrator {
         ...slots.map(slot => sourceAttempt(slot)),
       ])
       const routing: SearchRoutingDecision = Object.freeze({
-        depth: strategy.depth,
         supplementalProviders: slots.filter(slot => config.supplementalSearch[slot.key]).map(slot => slot.key),
         sourcesPerProvider: config.supplementalSearch.maxSourcesPerProvider,
-        profile: strategy.profile,
       })
       const answer = limitedAnswer.text.length === 0 ? undefined : limitedAnswer.text
       const candidate: SearchCanonicalResult = {
@@ -760,8 +755,6 @@ export class SearchOrchestrator {
         diagnostics: { attempts, routing },
         persistence: {
           collectionTruncated,
-          depth: strategy.depth,
-          profile: strategy.profile,
           query,
           sources: prioritizedSources,
         },

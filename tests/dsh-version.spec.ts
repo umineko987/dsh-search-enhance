@@ -17,7 +17,7 @@ describe('DSH release compatibility', () => {
   })
 
   it('locks the entire DSH test runtime to the supported release', () => {
-    const entries = Object.entries(lockfile.packages).filter(([path]) => path.includes('/@deepseek-ai/dsh-'))
+    const entries = Object.entries(lockfile.packages).filter(([path]) => /(?:^|\/)node_modules\/@deepseek-ai\/dsh-[^/]+$/.test(path))
     expect(entries.length).toBeGreaterThan(0)
     for (const [path, pkg] of entries) {
       expect((pkg as { version: string }).version, path).toBe(dshVersion)

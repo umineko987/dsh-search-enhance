@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { boot, initProfile, readProfilePatches } from '@deepseek-ai/dsh-app-boot'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import { SessionId } from '@deepseek-ai/dsh-session'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 const home = await mkdtemp(join(tmpdir(), 'dsh-search-enhance-profile-'))
@@ -23,7 +25,10 @@ try {
     await symlink(root, selfLink, 'junction')
     linked = true
   }
-  initProfile(profile, [])
+  initProfile(profile, ['dsh-search-enhance'])
+  const hostRows = process.argv.includes('--host-subagents') ? `- id: host-subagents
+  name: '@deepseek-ai/dsh-subagent'
+` : ''
   const configured = `- id: storage
   name: '@deepseek-ai/dsh-storage'
 - id: storage-json
@@ -38,6 +43,12 @@ try {
   name: '@deepseek-ai/dsh-session'
 - id: agents
   name: '@deepseek-ai/dsh-agent'
+- id: projections
+  name: '@deepseek-ai/dsh-session-projection'
+- id: llm
+  name: '@deepseek-ai/dsh-llm'
+- id: agent-loop
+  name: '@deepseek-ai/dsh-agent-loop'
 - id: system-prompt
   name: '@deepseek-ai/dsh-system-prompt'
 - id: tools
@@ -55,8 +66,8 @@ try {
   config:
     host: 127.0.0.1
     port: 0
-- id: search-enhance
-  name: 'dsh-search-enhance'
+`
+  const searchConfig = `- id: search-enhance
   config:
     searchApi:
       baseUrl: https://grok-gateway.example/v1
@@ -74,7 +85,7 @@ try {
     installAnchor: join(root, 'package.json'), cwd: root, home,
     startedBundles: [], overlays: [], telemetryDisabledEnv: undefined,
   }
-  await writeFile(profileContext.patchPath, `- insert:\n${configured.trimEnd().split('\n').map(line => `    ${line}`).join('\n')}\n`)
+  await writeFile(profileContext.patchPath, `- insert:\n${(configured + hostRows).trimEnd().split('\n').map(line => `    ${line}`).join('\n')}\n${searchConfig}\n`)
   ctx = await boot('dsh-search-enhance-profile-smoke', configPath,
     readProfilePatches('dsh', profileContext),
     host => { host.provide('profileContext', profileContext) },
@@ -91,10 +102,24 @@ try {
   const before = await first.json()
   assert.equal(before.value.searchApi.model, 'grok-4.20-beta')
   assert.equal(before.applies, 'live')
-  assert.equal(before.base.searchApi.model, 'grok-4.20-beta')
-  assert.equal(before.user?.searchApi?.model, undefined)
+  assert.equal(before.base.searchApi.model, '')
+  assert.equal(before.user?.searchApi?.model, 'grok-4.20-beta')
+  assert.equal('research' in before.value, false)
+  assert.equal('research' in before.base, false)
+  assert.equal('research' in (before.user ?? {}), false)
+  assert.equal(Object.keys(before.options).some(key => key.startsWith('research')), false)
   const toolNames = ctx.tools.schemas().map(schema => schema.name)
-  assert.deepEqual(toolNames, ['docs_search', 'web_extract', 'search_tools'])
+  assert.deepEqual(toolNames, [], 'public plugin tools must be agent-local')
+  assert.deepEqual(ctx.subagents.list(), [], 'research backend is created only for an invocation')
+  const hostSubagents = process.argv.includes('--host-subagents')
+  const rows = [...ctx.loader.entries()]
+  assert.equal(rows.find(row => row.options.id === 'search-enhance-subagents').disabled, hostSubagents)
+  const parent = await ctx.agents.create({ sessionId: SessionId('profile-parent'), agentOptions: { provider: 'mock', model: 'parent-model' } })
+  assert.deepEqual(ctx.tools.schemas(parent.agent).map(tool => tool.name).sort(), ['docs_search', 'web_extract', 'web_research'])
+  const research = await ctx.tools.execute({ name: 'web_research', arguments: { query: 'Self-contained profile research' }, callId: ToolCallId('profile-research'), signal: new AbortController().signal, agent: parent.agent })
+  assert.equal(research.isError, true, JSON.stringify(research))
+  assert.match(JSON.stringify(research), /only explicitly configured/)
+  assert.deepEqual(ctx.agents.list().map(agent => agent.id), [parent.agent.id])
   const patched = await fetch(endpoint, {
     method: 'PATCH',
     headers: { origin, 'content-type': 'application/json' },
@@ -102,6 +127,7 @@ try {
       mutations: [
         { op: 'set', path: ['searchApi', 'model'], value: 'grok-third-party-next' },
         { op: 'set', path: ['toolDiscovery', 'mode'], value: 'all' },
+        { op: 'set', path: ['toolTimeoutMs'], value: 90_000 },
       ] }),
   })
   assert.equal(patched.status, 200, await patched.text())
@@ -111,8 +137,13 @@ try {
   assert.equal(persisted.value.searchApi.model, 'grok-third-party-next')
   assert.equal(entry.fiber.config.searchApi.model, 'grok-third-party-next', 'active plugin must use the saved config')
   assert.equal(entry.fiber.config.toolDiscovery.mode, 'all')
+  assert.equal(persisted.value.toolTimeoutMs, 90_000)
+  assert.equal(persisted.user.toolTimeoutMs, 90_000)
+  assert.equal(entry.fiber.config.toolTimeoutMs, 90_000, 'automatic reload must apply the saved tool timeout')
+  assert.equal('research' in persisted.value, false)
   assert.equal(persisted.revision, 1, 'configuration revision must remain monotonic after reload')
   assert.deepEqual(ctx.tools.schemas().map(schema => schema.name), toolNames)
+  assert.deepEqual(ctx.subagents.list(), [], 'config reload must not duplicate shared providers')
   assert.equal(persisted.user.searchApi.model, 'grok-third-party-next')
   assert.equal(persisted.user.searchApi.thinkingLevel, undefined)
   const stale = await fetch(endpoint, {
@@ -130,6 +161,18 @@ try {
   })
   assert.equal(rejected.status, 422)
   assert.equal((await (await fetch(endpoint)).json()).value.searchApi.model, 'grok-third-party-next')
+  const rejectedResearch = await fetch(endpoint, {
+    method: 'PATCH',
+    headers: { origin, 'content-type': 'application/json' },
+    body: JSON.stringify({ expectedRevision: persisted.revision,
+      mutations: [{ op: 'set', path: ['research', 'timeoutMs'], value: 900_000 }] }),
+  })
+  assert.equal(rejectedResearch.status, 400)
+  const unchanged = await (await fetch(endpoint)).json()
+  assert.equal(unchanged.revision, persisted.revision)
+  assert.equal(unchanged.value.toolTimeoutMs, 90_000)
+  assert.equal(unchanged.value.searchApi.model, 'grok-third-party-next')
+  assert.equal('research' in unchanged.value, false)
   const patch = await readFile(profileContext.patchPath, 'utf8')
   assert.match(patch, /grok-third-party-next/u)
   assert.match(patch, /https:\/\/context7\.example\/v1/u)

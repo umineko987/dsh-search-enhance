@@ -7,7 +7,7 @@ import {
   type SearchApiProtocol,
   type ThinkingLevel,
 } from '../config.js'
-import type { ResolvedSearchStrategy } from '../search/profiles.js'
+import type { ResolvedSearchStrategy } from '../search/policy.js'
 import {
   renderCurrentTimeContext,
   type CurrentTimeContext,
@@ -160,7 +160,7 @@ export function buildSearchApiRequest(input: BuildSearchApiRequestInput): Prepar
   const body = protocol === 'responses'
     ? snapshotBody({
         input: user,
-        instructions: input.strategy.profilePrompt,
+        instructions: input.strategy.prompt,
         model,
         ...(effort === undefined ? {} : { reasoning: { effort } }),
         store: false,
@@ -170,7 +170,7 @@ export function buildSearchApiRequest(input: BuildSearchApiRequestInput): Prepar
       })
     : snapshotBody({
         messages: [
-          { content: input.strategy.profilePrompt, role: 'system' },
+          { content: input.strategy.prompt, role: 'system' },
           { content: user, role: 'user' },
         ],
         model,

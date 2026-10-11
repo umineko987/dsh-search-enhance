@@ -262,8 +262,6 @@ describe('high-level documentation provider routing', () => {
           { provider: 'exa', state: withExa ? 'complete' : 'skipped' },
         ])
     expect(result.persistence).toMatchObject({
-      depth: 'compact',
-      profile: 'coding_docs',
       query: 'React useEffect API docs',
     })
     expect(result.sources.length).toBeGreaterThan(0)
@@ -780,21 +778,20 @@ describe('web_search documentation integration', () => {
       tavily: unavailable('tavily'),
     })
 
-    const run = (query: string, profile: 'coding_docs' | 'fact_check') => orchestrator.search({
+    const run = (query: string) => orchestrator.search({
       config: { ...test.config, supplementalSearch: { ...test.config.supplementalSearch, exa: true } },
-      profile,
       query,
       signal: new AbortController().signal,
     })
-    const first = await run('React useEffect API docs', 'coding_docs')
-    const second = await run('React useEffect API docs', 'coding_docs')
+    const first = await run('React useEffect API docs')
+    const second = await run('React useEffect API docs')
 
     expect(first.canonical.sources.map(source => source.provider)).toEqual(['exa'])
     expect(second.canonical.sources).toEqual(first.canonical.sources)
     expect(exaSearch).toHaveBeenCalledTimes(2)
     expect(test.calls).toHaveLength(0)
 
-    await run('compare quarterly revenue reports', 'fact_check')
+    await run('compare quarterly revenue reports')
     expect(exaSearch).toHaveBeenCalledTimes(3)
     expect(test.calls).toHaveLength(0)
   })

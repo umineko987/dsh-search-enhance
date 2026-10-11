@@ -5,7 +5,7 @@ exports[`fixed user-scenario acceptance gate > keeps complete versioned SDK reco
   "canonical": {
     "answer": "Use the official Acme SDK v4.2 API reference together with the v4.2 release and changelog; retain the v3 material only as explicitly older migration context.",
     "evidence_level": "discovery",
-    "model_text_max_bytes": 16384,
+    "model_text_max_bytes": 12288,
     "returned_sources": 6,
     "sources": [
       {
@@ -90,7 +90,7 @@ exports[`fixed user-scenario acceptance gate > returns one bounded financial fac
   "canonical": {
     "answer": "Verdict: unresolved. Alpha Corp's reported 42.7% margin is unverified because only the issuer filing supports that key number; the wire report repeats the announcement and an independent analyst disputes management's interpretation. The bounded evidence supports reporting the disagreement, not converting the number into a verified fact.",
     "evidence_level": "discovery",
-    "model_text_max_bytes": 16384,
+    "model_text_max_bytes": 12288,
     "returned_sources": 6,
     "sources": [
       {

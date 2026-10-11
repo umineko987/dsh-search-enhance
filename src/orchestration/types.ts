@@ -1,4 +1,4 @@
-import type { Config, SearchDepth, SearchProfile, SupplementalSearchProvider } from '../config.js'
+import type { Config, SupplementalSearchProvider } from '../config.js'
 import type { CanonicalSource, SourceRecordCandidate } from '../contracts/index.js'
 import type {
   ProviderAttemptRecord,
@@ -39,8 +39,6 @@ export interface SearchWarning {
 
 /** One operation's fixed policy decision, excluding credentials and endpoints. */
 export interface SearchRoutingDecision {
-  readonly profile: SearchProfile
-  readonly depth: SearchDepth
   readonly supplementalProviders: readonly SupplementalSearchProvider[]
   readonly sourcesPerProvider: number
 }
@@ -77,8 +75,6 @@ export interface SearchOrchestrationResult {
 
 export interface SearchOrchestrationInput {
   readonly query: string
-  readonly profile?: unknown
-  readonly depth?: unknown
   /** Optional caller-owned operation snapshot; otherwise `getConfig()` is read once. */
   readonly config?: Config
   readonly signal: AbortSignal

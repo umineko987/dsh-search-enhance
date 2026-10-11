@@ -62,6 +62,10 @@ export class SearchEnhanceSourceService extends Service {
     return this.store.lookup(session, sourceRef)
   }
 
+  sourceRefForCall(session: Session, call: SourceCallIdentity) {
+    return this.store.sourceRefForCall(session, call)
+  }
+
   page(session: Session, request: SourcePageRequest): SourcePageResult {
     return this.store.page(session, request)
   }

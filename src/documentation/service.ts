@@ -933,8 +933,6 @@ export class DocumentationSearchService extends Service {
     )
     const persistence = Object.freeze({
       collectionTruncated: exaOutcome.truncated,
-      depth: 'compact' as const,
-      profile: 'coding_docs' as const,
       query: validated.query,
       sources: Object.freeze(qualitySources),
     })

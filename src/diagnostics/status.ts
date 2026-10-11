@@ -200,8 +200,6 @@ export async function inspectDiagnosticStatus(
   ])
 
   const configuration: DiagnosticConfigurationStatus = Object.freeze({
-    defaultProfile: config.defaultProfile,
-    defaultDepth: config.defaultDepth,
     searchApiProtocol: config.searchApi.protocol,
     searchModelConfigured,
     thinkingLevel: config.searchApi.thinkingLevel,

@@ -149,8 +149,6 @@ Sources:
     }
     const provider = new SearchApiProvider(legacyDependencies)
     const legacyInput = {
-      depth: 'normal',
-      profile: 'fact_check',
       query: 'verify this claim',
       session: operationSession,
       signal: signal(),
@@ -182,7 +180,7 @@ Sources:
     }
     const dispatchedBody = JSON.parse(String(requests[1]?.init?.body)) as Record<string, unknown>
     expect(dispatchedBody).toMatchObject({ model: 'model-a', stream: true })
-    expect(JSON.stringify(dispatchedBody)).toContain('# Search Profile: Fact Check')
+    expect(JSON.stringify(dispatchedBody)).toContain('Infer the best search strategy from the query.')
     expect(JSON.stringify(operationSession.snapshotEvents())).not.toContain('secret-a')
   })
 
@@ -303,7 +301,7 @@ Sources:
   })
 
   it('uses a caller-owned Config/strategy snapshot without resolving Config again', async () => {
-    const operationConfig = resolveConfig({ defaultProfile: 'project_research' })
+    const operationConfig = resolveConfig({ retention: { providerMaxSources: 23 } })
     const fetchMock = vi.fn(async (input: Parameters<typeof fetch>[0]) =>
       String(input).endsWith('/models')
         ? jsonResponse({})
@@ -314,10 +312,7 @@ Sources:
       config: operationConfig,
       query: 'project release notes',
       signal: signal(),
-      strategy: resolveSearchStrategy(operationConfig, {
-        depth: 'normal',
-        profile: 'project_research',
-      }),
+      strategy: resolveSearchStrategy(operationConfig),
     })
 
     expect(result.answer).toBe('Resolved answer')

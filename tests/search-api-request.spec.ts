@@ -36,7 +36,7 @@ function prepare(
   return buildSearchApiRequest({
     config: config.searchApi,
     query: '  bounded query  ',
-    strategy: resolveSearchStrategy(config, { depth: 'normal', profile: 'coding_docs' }),
+    strategy: resolveSearchStrategy(config),
   })
 }
 
@@ -53,8 +53,8 @@ describe('credential-free Search API request construction', () => {
       protocol,
     })
     expect(request.serializedBody).toBe(JSON.stringify(request.body))
-    expect(JSON.stringify(request.body)).toContain('# Search Profile: Coding Docs')
-    expect(JSON.stringify(request.body)).toContain('Mode: normal')
+    expect(JSON.stringify(request.body)).toContain('Infer the best search strategy from the query.')
+    expect(JSON.stringify(request.body)).toContain('Keep the answer under 6000 characters.')
     expect(JSON.stringify(request)).not.toContain('ROTATING_SEARCH_KEY')
     expect(request).not.toHaveProperty('credentialRef')
   })
@@ -87,7 +87,7 @@ describe('credential-free Search API request construction', () => {
       const body = request.body as Record<string, unknown>
       expect(body).toMatchObject({
         input: 'bounded query',
-        instructions: expect.stringContaining('# Search Profile: Coding Docs'),
+        instructions: expect.stringContaining('Infer the best search strategy from the query.'),
         model: 'search-model',
         store: false,
         stream: true,

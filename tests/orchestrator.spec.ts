@@ -3,8 +3,6 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   Config,
   type Config as SearchEnhanceConfig,
-  type OutputBudget,
-  type SearchProfile,
 } from '../src/config.js'
 import type { CanonicalSource, SourceProvider } from '../src/contracts/index.js'
 import {
@@ -35,8 +33,6 @@ import type {
 import { SDK_QUALITY_FIXTURE } from './fixtures/source-quality.js'
 
 interface ConfigOptions {
-  readonly profile?: SearchProfile
-  readonly budget?: Partial<OutputBudget>
   readonly supplementalSearch?: Partial<SearchEnhanceConfig['supplementalSearch']>
   readonly canonicalOutputMaxBytes?: number
   readonly providerMaxSources?: number
@@ -45,10 +41,7 @@ interface ConfigOptions {
 }
 
 function resolveConfig(options: ConfigOptions = {}): SearchEnhanceConfig {
-  const profile = options.profile ?? 'fact_check'
   const base = Config({
-    defaultDepth: 'compact',
-    defaultProfile: profile,
     retry: {
       baseDelayMs: 0,
       jitterRatio: 0,
@@ -63,16 +56,6 @@ function resolveConfig(options: ConfigOptions = {}): SearchEnhanceConfig {
     ...base,
     fallbackMode: options.fallbackMode ?? base.fallbackMode,
     toolTimeoutMs: options.toolTimeoutMs ?? base.toolTimeoutMs,
-    budgets: {
-      ...base.budgets,
-      [profile]: {
-        ...base.budgets[profile],
-        compact: {
-          ...base.budgets[profile].compact,
-          ...options.budget,
-        },
-      },
-    },
     supplementalSearch: { ...base.supplementalSearch, ...options.supplementalSearch },
     retention: {
       ...base.retention,
@@ -246,7 +229,7 @@ describe('explicit supplemental Provider selection', () => {
   })
 
   it('does not probe or call documentation Providers for a non-triggering fixture', async () => {
-    const test = fixture({ config: resolveConfig({ profile: 'academic' }) })
+    const test = fixture({ config: resolveConfig() })
 
     const result = await test.orchestrator.search(input('compare statistical methods'))
 
@@ -256,7 +239,7 @@ describe('explicit supplemental Provider selection', () => {
   })
 
   it('does not probe Exa unless selected, regardless of docs intent', async () => {
-    const config = resolveConfig({ profile: 'coding_docs' })
+    const config = resolveConfig()
     const exa = fakeSourceProvider('exa', 'docs_search', { configured: true })
     const test = fixture({ config, exa })
 
@@ -266,42 +249,6 @@ describe('explicit supplemental Provider selection', () => {
     expect(exa.search).not.toHaveBeenCalled()
   })
 
-  it('keeps Provider collection and persistence independent from zero visible sources', async () => {
-    const exa = fakeSourceProvider('exa', 'docs_search', {
-      configured: true,
-      search: complete([source('https://docs.test/hidden', 'exa')]),
-    })
-    const test = fixture({
-      config: resolveConfig({
-        budget: { maxVisibleSources: 0 },
-        profile: 'coding_docs',
-        supplementalSearch: { exa: true, maxSourcesPerProvider: 10 },
-        providerMaxSources: 7,
-      }),
-      exa,
-      main: async () => mainResult('answer', [
-        source('https://main.test/hidden-a', 'search-api'),
-        source('https://main.test/hidden-b', 'search-api'),
-      ]),
-    })
-
-    const result = await test.orchestrator.search(input('React API'))
-
-    expect(exa.search).toHaveBeenCalledWith(expect.objectContaining({ limit: 7 }))
-    expect(result.canonical).toMatchObject({
-      returnedSources: 0,
-      sources: [],
-      totalSources: 3,
-    })
-    expect(result.canonical).not.toHaveProperty('attempts')
-    expect(result.canonical).not.toHaveProperty('routing')
-    expect(result.persistence.sources.map(item => item.url)).toEqual([
-      'https://main.test/hidden-a',
-      'https://main.test/hidden-b',
-      'https://docs.test/hidden',
-    ])
-    expect(result.diagnostics.attempts.length).toBeGreaterThan(0)
-  })
 
   it('preserves answer-cited sources in the persistence candidate at the Provider cap', async () => {
     const parsed = parseSearchAnswerText(`Use the [official URL API reference](https://developer.mozilla.org/en-US/docs/Web/API/URL).
@@ -331,7 +278,7 @@ Sources:
       search: complete([source('https://docs.test/exa', 'exa')]),
     })
     const test = fixture({
-      config: resolveConfig({ profile: 'fact_check', fallbackMode: 'off', supplementalSearch: { exa: true } }),
+      config: resolveConfig({ fallbackMode: 'off', supplementalSearch: { exa: true } }),
       exa,
     })
 
@@ -419,7 +366,7 @@ describe('orchestrator settlement, partial success, and diagnostics', () => {
   it('resolves Config once and starts every decided path with the same snapshot', async () => {
     const exa = fakeSourceProvider('exa', 'docs_search', { configured: true })
     const test = fixture({
-      config: resolveConfig({ profile: 'coding_docs', supplementalSearch: { exa: true } }),
+      config: resolveConfig({ supplementalSearch: { exa: true } }),
       exa,
     })
 
@@ -428,11 +375,11 @@ describe('orchestrator settlement, partial success, and diagnostics', () => {
     expect(test.getConfig).toHaveBeenCalledTimes(1)
     expect(test.main.mock.calls[0]?.[0].config).toBe(test.config)
     expect(exa.search.mock.calls[0]?.[0].config).toBe(test.config)
-    expect(test.main.mock.calls[0]?.[0].strategy.profile).toBe('coding_docs')
+    expect(test.main.mock.calls[0]?.[0].strategy.budget.maxVisibleSources).toBe(8)
   })
 
   it('keeps main success complete when optional Providers are absent', async () => {
-    const test = fixture({ config: resolveConfig({ profile: 'coding_docs' }) })
+    const test = fixture({ config: resolveConfig() })
 
     const result = await test.orchestrator.search(input('React API'))
 
@@ -535,40 +482,6 @@ describe('orchestrator settlement, partial success, and diagnostics', () => {
     ])
   })
 
-  it('keeps partial success when the visible-source cap is zero but persistence has evidence', async () => {
-    const exa = fakeSourceProvider('exa', 'docs_search', {
-      configured: true,
-      search: complete([source('https://docs.test/persisted-only', 'exa')]),
-    })
-    const test = fixture({
-      config: resolveConfig({
-        budget: { maxVisibleSources: 0 },
-        profile: 'coding_docs',
-        supplementalSearch: { exa: true },
-      }),
-      exa,
-      main: async () => {
-        throw new ProviderError({
-          capability: 'main_search',
-          kind: 'network',
-          provider: 'search-api',
-        })
-      },
-    })
-
-    const result = await test.orchestrator.search(input('React API'))
-
-    expect(result.canonical).toMatchObject({
-      answer: '主搜索失败，仅返回补充来源。',
-      returnedSources: 0,
-      sources: [],
-      state: 'partial',
-      totalSources: 1,
-    })
-    expect(result.persistence.sources).toEqual([
-      source('https://docs.test/persisted-only', 'exa'),
-    ])
-  })
 
   it('throws the main infrastructure failure when no supplemental source succeeds', async () => {
     const mainError = new ProviderError({
@@ -717,9 +630,7 @@ describe('source order, exact deduplication, and independent output limits', () 
     })
     const test = fixture({
       config: resolveConfig({
-        budget: { maxVisibleSources: 10 },
         supplementalSearch: { exa: true, tavily: true, firecrawl: true, maxSourcesPerProvider: 4 },
-        profile: 'coding_docs',
       }),
       exa,
       firecrawl,
@@ -759,9 +670,7 @@ describe('source order, exact deduplication, and independent output limits', () 
     })
     const test = fixture({
       config: resolveConfig({
-        budget: { maxVisibleSources: 10 },
         supplementalSearch: { exa: true, tavily: true, firecrawl: true, maxSourcesPerProvider: 4 },
-        profile: 'coding_docs',
       }),
       exa,
       firecrawl,
@@ -834,10 +743,6 @@ describe('source order, exact deduplication, and independent output limits', () 
       search: complete(supplementalSources),
     })
     const config = resolveConfig({
-      budget: {
-        maxAnswerCharacters: Array.from(answer).length,
-        maxVisibleSources: 10,
-      },
       supplementalSearch: { tavily: true, firecrawl: true, maxSourcesPerProvider: 9 },
     })
     const query = 'current external pricing evidence'
@@ -883,7 +788,7 @@ describe('source order, exact deduplication, and independent output limits', () 
     ))
     if (firstPage.state !== 'found') throw new Error('expected retained source page')
 
-    expect(result.canonical.sources).toHaveLength(10)
+    expect(result.canonical.sources).toHaveLength(8)
     expect(result.persistence.sources).toHaveLength(109)
     expect(stored).toMatchObject({
       collectionTruncated: true,
@@ -919,7 +824,6 @@ describe('source order, exact deduplication, and independent output limits', () 
     )
     const answer = `Use [[1]](${citedUrl}) for the answer.`
     const test = fixture({
-      config: resolveConfig({ budget: { maxVisibleSources: 2 } }),
       main: async () => mainResult(answer, [highQuality, cited]),
     })
 
@@ -970,7 +874,6 @@ Sources:
 - [Canonical documentation page](https://example.test/path/)
 - [Other page](https://other.example.test/page)`)
     const test = fixture({
-      config: resolveConfig({ budget: { maxVisibleSources: 10 } }),
       main: async () => mainResult(parsed.answer, parsed.sources),
     })
 
@@ -986,7 +889,7 @@ Sources:
   })
 
   it('uses the exact bounded answer for citation priority and ignores a truncated citation', async () => {
-    const visibleAnswer = 'Read [the visible citation](https://cited.example.test/visible).'
+    const visibleAnswer = 'Read [the visible citation](https://cited.example.test/visible).'.padEnd(6000, '.')
     const fullAnswer = `${visibleAnswer} Then read [the hidden citation](https://cited.example.test/hidden).`
     const sources = [
       source('https://cited.example.test/visible', 'search-api', 'Visible citation'),
@@ -994,10 +897,6 @@ Sources:
       source('https://github.com/acme/sdk/releases/tag/v1.0.0', 'search-api', 'High quality release'),
     ]
     const config = resolveConfig({
-      budget: {
-        maxAnswerCharacters: Array.from(visibleAnswer).length,
-        maxVisibleSources: 3,
-      },
     })
     const exactTest = fixture({
       config,
@@ -1026,26 +925,24 @@ Sources:
     ])
   })
 
-  it('applies answer code-point and visible-source limits independently at tiny/exact/over boundaries', async () => {
-    const test = fixture({
-      config: resolveConfig({ budget: { maxAnswerCharacters: 2, maxVisibleSources: 1 } }),
-      main: async () => mainResult('界🙂X', [
-        source('https://main.test/one', 'search-api'),
-        source('https://main.test/two', 'search-api'),
-      ]),
-    })
-
+  it.each([5999, 6000, 6001])('applies fixed answer and source limits at the %s code-point boundary', async length => {
+    const answer = Array.from({ length }, (_, index) => index % 2 ? '🙂' : '界').join('')
+    const sources = Array.from({ length: 9 }, (_, index) => source(`https://main.test/${index}`, 'search-api'))
+    const test = fixture({ main: async () => mainResult(answer, sources) })
     const result = await test.orchestrator.search(input())
-
     expect(result.canonical).toMatchObject({
-      answer: '界🙂',
-      returnedAnswerCharacters: 2,
-      returnedSources: 1,
-      totalAnswerCharacters: 3,
-      totalSources: 2,
+      answer: Array.from(answer).slice(0, 6000).join(''),
+      returnedAnswerCharacters: Math.min(length, 6000),
+      returnedSources: 8,
+      totalAnswerCharacters: length,
+      totalSources: 9,
       truncated: true,
     })
-    expect(result.canonical.warnings.map(item => item.code)).toEqual(['answer_truncated', 'visible_sources_truncated'])
+    expect(result.canonical.warnings.map(item => item.code)).toEqual([
+      ...(length > 6000 ? ['answer_truncated'] : []),
+      'visible_sources_truncated',
+    ])
+    expect(result.persistence.sources).toHaveLength(9)
     expect(result.persistence.collectionTruncated).toBe(false)
   })
 
@@ -1056,14 +953,12 @@ Sources:
       source('https://main.test/persist-3', 'search-api'),
     ]
     const fullTest = fixture({
-      config: resolveConfig({ budget: { maxVisibleSources: 3 } }),
       main: async () => mainResult('canonical answer', sources),
     })
     const full = await fullTest.orchestrator.search(input())
     const exactBytes = Buffer.byteLength(JSON.stringify(full.canonical), 'utf8')
     const boundedTest = fixture({
       config: resolveConfig({
-        budget: { maxVisibleSources: 3 },
         canonicalOutputMaxBytes: exactBytes - 1,
       }),
       main: async () => mainResult('canonical answer', sources),

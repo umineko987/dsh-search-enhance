@@ -1,4 +1,3 @@
-import type { SearchProfile } from '../../src/config.js'
 import type { CanonicalSource, SourceProvider } from '../../src/contracts/index.js'
 
 export const ACCEPTANCE_SEARCH_PROVIDERS = [
@@ -13,7 +12,6 @@ export type AcceptanceSearchProvider = (typeof ACCEPTANCE_SEARCH_PROVIDERS)[numb
 export interface UserScenarioAcceptanceFixture {
   readonly name: string
   readonly query: string
-  readonly profile: SearchProfile
   readonly answer: string
   readonly sources: Readonly<Record<AcceptanceSearchProvider, readonly CanonicalSource[]>>
 }
@@ -31,7 +29,6 @@ function frozenSources(
 export const FINANCIAL_FACT_CHECK_ACCEPTANCE: Readonly<UserScenarioAcceptanceFixture> = Object.freeze({
   name: 'financial-temporal-fact-check',
   query: 'latest Alpha Corp Q1 earnings release margin fact-check',
-  profile: 'fact_check',
   answer: [
     'Verdict: unresolved.',
     "Alpha Corp's reported 42.7% margin is unverified because only the issuer filing supports that key number; the wire report repeats the announcement and an independent analyst disputes management's interpretation.",
@@ -108,7 +105,6 @@ export const FINANCIAL_FACT_CHECK_ACCEPTANCE: Readonly<UserScenarioAcceptanceFix
 export const SDK_VERSIONED_DOCS_ACCEPTANCE: Readonly<UserScenarioAcceptanceFixture> = Object.freeze({
   name: 'sdk-versioned-coding-docs',
   query: 'Acme SDK v4.2 API migration',
-  profile: 'coding_docs',
   answer: 'Use the official Acme SDK v4.2 API reference together with the v4.2 release and changelog; retain the v3 material only as explicitly older migration context.',
   sources: Object.freeze({
     'search-api': frozenSources([

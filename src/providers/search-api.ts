@@ -88,10 +88,7 @@ interface SearchApiSearchOperationInput {
   readonly onDispatch?: () => void
 }
 
-export interface SearchApiSearchInput extends SearchApiSearchOperationInput {
-  readonly profile?: unknown
-  readonly depth?: unknown
-}
+export type SearchApiSearchInput = SearchApiSearchOperationInput
 
 /** Already-resolved operation used when an orchestrator owns the single Config/strategy snapshot. */
 export interface SearchApiResolvedSearchInput extends SearchApiSearchOperationInput {
@@ -712,10 +709,7 @@ export class SearchApiProvider {
     const config = this.getConfig()
     let strategy: ResolvedSearchStrategy
     try {
-      strategy = resolveSearchStrategy(config, {
-        ...(input.depth === undefined ? {} : { depth: input.depth }),
-        ...(input.profile === undefined ? {} : { profile: input.profile }),
-      })
+      strategy = resolveSearchStrategy(config)
     } catch (error) {
       throw new ProviderError({
         capability: 'main_search',

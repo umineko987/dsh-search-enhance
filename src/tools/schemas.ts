@@ -8,8 +8,6 @@ import type {
 import {
   DOCS_SEARCH_DEFAULT_MAX_RESULTS,
   DOCS_SEARCH_MAX_RESULTS_LIMIT,
-  SEARCH_DEPTHS,
-  SEARCH_PROFILES,
   SITE_MAP_DEFAULT_LIMIT,
   SITE_MAP_DEFAULT_MAX_BREADTH,
   SITE_MAP_DEFAULT_MAX_DEPTH,
@@ -96,16 +94,6 @@ export const WEB_SEARCH_PARAMETERS = {
     type: 'string',
     required: true,
     description: 'A non-empty, self-contained natural-language search question.',
-  },
-  profile: {
-    type: 'string',
-    enum: SEARCH_PROFILES,
-    description: 'Optional search strategy; omitted uses the user setting.',
-  },
-  depth: {
-    type: 'string',
-    enum: SEARCH_DEPTHS,
-    description: 'Optional result depth; omitted uses the user setting.',
   },
 } as const satisfies ParameterSchemaSpec
 

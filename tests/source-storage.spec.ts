@@ -25,6 +25,7 @@ import {
   SOURCE_REF_NOT_FOUND,
   SourceRecordStore,
   SourceStoreError,
+  StoredSourceRecordSchema,
   createSourceRef,
   retainSourceRecord,
   sourceCallIdentity,
@@ -47,8 +48,6 @@ function candidate(
 ): SourceRecordCandidate {
   return Object.freeze({
     collectionTruncated,
-    depth: 'compact',
-    profile: 'coding_docs',
     query: 'React 文档 query',
     sources,
   })
@@ -147,6 +146,16 @@ function retentionInput(sourceRef: SourceRef, sources = [source(1)]) {
 }
 
 describe('opaque source refs and complete-record retention', () => {
+  it('reads existing records while discarding retired search strategy metadata', () => {
+    const record = retainSourceRecord(retentionInput(createSourceRef(deterministicEntropy(1))), {
+      maxBytes: 64 * 1024,
+      maxSources: 10,
+    })
+    const restored = StoredSourceRecordSchema.parse({ ...record, profile: 'auto', depth: 'compact' })
+    expect(restored).toEqual(record)
+    expect(restored).not.toHaveProperty('profile')
+    expect(restored).not.toHaveProperty('depth')
+  })
   it('creates fixed-shape random ids without embedding caller data', () => {
     const first = createSourceRef(deterministicEntropy(7))
     const second = createSourceRef(deterministicEntropy(8))
@@ -410,6 +419,8 @@ describe('owner, restored-session, and structured fork authorization', () => {
       const child = context.sessions.fork(owner, undefined, SessionId('child-native'))
       const grandchild = context.sessions.fork(child, undefined, SessionId('grandchild-native'))
       expect(test.store.lookup(child, commit.sourceRef)).toMatchObject({ state: 'found' })
+      expect(test.store.sourceRefForCall(child, identity)).toBe(commit.sourceRef)
+      expect(test.store.sourceRefForCall(grandchild, identity)).toBe(commit.sourceRef)
       expect(test.store.lookup(grandchild, commit.sourceRef)).toMatchObject({ state: 'found' })
 
       const unrelatedParent = context.sessions.create(SessionId('unrelated-parent'))
@@ -496,5 +507,40 @@ describe('owner, restored-session, and structured fork authorization', () => {
       parent: Symbol('opaque'),
       rootCallId: 'root',
     }).mode).toBe('nested-code')
+  })
+})
+
+describe('source reference recovery by complete call identity', () => {
+  it('fails closed for ambiguous or empty records and a stopped store', async () => {
+    const test = store()
+    const owner = detachedSession('call-owner')
+    const first = await test.store.record(owner, call(), candidate(), new AbortController().signal)
+    expect(test.store.sourceRefForCall(owner, call())).toBe(first.sourceRef)
+    await test.store.record(owner, call(), candidate([source(2)]), new AbortController().signal)
+    expect(test.store.sourceRefForCall(owner, call())).toBeUndefined()
+    test.table.records.delete(first.sourceRef)
+    const [ref, record] = [...test.table.records][0]!
+    test.table.records.set(ref, { ...record, sources: [], truncated: true })
+    expect(test.store.sourceRefForCall(owner, call())).toBeUndefined()
+    test.store.stop()
+    expect(() => test.store.sourceRefForCall(owner, call())).toThrow(/SOURCE_STORE_CLOSED/)
+  })
+  it('does not expose pending or failed durable writes', async () => {
+    const test = store()
+    const owner = detachedSession('pending-owner')
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    test.table.putHook = async (ref, value) => { await gate; test.table.records.set(ref, value) }
+    const pending = test.store.record(owner, call(), candidate(), new AbortController().signal)
+    await Promise.resolve()
+    expect(test.store.sourceRefForCall(owner, call())).toBeUndefined()
+    release()
+    expect(test.store.sourceRefForCall(owner, call())).toBeUndefined()
+    const commit = await pending
+    expect(test.store.sourceRefForCall(owner, call())).toBe(commit.sourceRef)
+    test.table.putHook = async () => { throw new Error('disk failed') }
+    const failedCall = { ...call(), callId: 'failed', rootCallId: 'failed' }
+    await expect(test.store.record(owner, failedCall, candidate(), new AbortController().signal)).rejects.toMatchObject({ code: 'SOURCE_RECORD_WRITE' })
+    expect(test.store.sourceRefForCall(owner, failedCall)).toBeUndefined()
   })
 })

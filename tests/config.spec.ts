@@ -5,7 +5,6 @@ import { describe, expect, it } from 'vitest'
 import {
   Config,
   DEFAULT_CREDENTIAL_REFS,
-  DEFAULT_SEARCH_BUDGETS,
   SUPPLEMENTAL_SEARCH_MAX_SOURCES,
   SEARCH_ENHANCE_SETTINGS_NAMESPACE,
   WEB_EXTRACT_PROXY_URL_MAX_CHARACTERS,
@@ -21,8 +20,8 @@ describe('stage 0 configuration contract', () => {
   it('resolves all deployment defaults without credentials', () => {
     const config = resolveConfig({})
 
-    expect(config.defaultProfile).toBe('auto')
-    expect(config.defaultDepth).toBe('compact')
+    expect(config).not.toHaveProperty('defaultProfile')
+    expect(config).not.toHaveProperty('defaultDepth')
     expect(config.searchApi).toMatchObject({
       baseUrl: 'https://api.x.ai/v1',
       credentialRef: DEFAULT_CREDENTIAL_REFS.searchApi,
@@ -38,7 +37,7 @@ describe('stage 0 configuration contract', () => {
       timeoutMs: 120_000,
     })
     expect(config.webExtract.parallel.enabled).toBe(false)
-    expect(config.budgets).toEqual(DEFAULT_SEARCH_BUDGETS)
+    expect(config).not.toHaveProperty('budgets')
     expect(config.supplementalSearch).toEqual({ exa: false, tavily: false, firecrawl: false, parallel: false, maxSourcesPerProvider: 5 })
     expect(resolveConfig({ supplementalSearch: { exa: true, tavily: true } }).supplementalSearch)
       .toMatchObject({ exa: true, tavily: true, firecrawl: false })
@@ -79,6 +78,7 @@ describe('stage 0 configuration contract', () => {
       sourceStoreMaxRecords: 100_000,
     })
     expect(config.toolDiscovery).toEqual({ mode: 'progressive' })
+    expect(config).not.toHaveProperty('research')
     expect(config.diagnostics).toEqual({
       timeoutMs: 30_000,
       maxProbeAttempts: 1,
@@ -123,9 +123,20 @@ describe('stage 0 configuration contract', () => {
     expect(String(SEARCH_ENHANCE_SETTINGS_NAMESPACE)).toBe('search-enhance')
   })
 
+  it('keeps research out of settings while preserving independent tool and provider timeouts', () => {
+    expect(Config.dict).not.toHaveProperty('research')
+    const config = resolveConfig({
+      toolTimeoutMs: 90_000,
+      searchApi: { timeoutMs: 30_000 },
+      providers: { exa: { timeoutMs: 45_000 } },
+    })
+    expect(config).not.toHaveProperty('research')
+    expect(config.toolTimeoutMs).toBe(90_000)
+    expect(config.searchApi.timeoutMs).toBe(30_000)
+    expect(config.providers.exa.timeoutMs).toBe(45_000)
+  })
+
   it.each([
-    [{ defaultProfile: 'other' }, 'profile enum'],
-    [{ defaultDepth: 'sources_only' }, 'depth enum'],
     [{ fallbackMode: 'on' }, 'fallback enum'],
     [{ minimumProfile: 'full' }, 'minimum capability enum'],
     [{ searchApi: { protocol: 'chat' } }, 'Search API protocol enum'],
@@ -226,7 +237,6 @@ describe('stage 0 configuration contract', () => {
 
   it('accepts explicit bounded overrides', () => {
     const config = resolveConfig({
-      defaultDepth: 'deep',
       retry: {
         jitterRatio: 0,
         maxAttempts: 1,
@@ -260,7 +270,6 @@ describe('stage 0 configuration contract', () => {
       },
     })
 
-    expect(config.defaultDepth).toBe('deep')
     expect(config.retry.maxAttempts).toBe(1)
     expect(config.retention.docsSearchMaxResults).toBe(10)
     expect(config.siteMap).toMatchObject({

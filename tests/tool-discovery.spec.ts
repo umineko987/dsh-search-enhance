@@ -1,48 +1,28 @@
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import { ToolCallId, createToolResultMessage } from '@deepseek-ai/dsh-llm'
+import { ToolCallId, createToolResultMessage, createAssistantMessage } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
-import {
-  validateJsonSchemaValue,
-  valueSchemaSpecToJsonSchema,
-  type ToolRunContext,
-} from '@deepseek-ai/dsh-tools'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
-  CAPABILITY_GROUPS,
-  DEFERRED_TOOL_NAMES,
   RESIDENT_TOOL_NAMES,
+  RESEARCH_TOOL_NAMES,
   foldToolDisclosureEvents,
-  parseSearchToolsArguments,
 } from '../src/tool-discovery/index.js'
-import {
-  SEARCH_TOOLS_OUTPUT_SCHEMA,
-  SEARCH_TOOLS_PARAMETERS,
-  createSearchToolsTool,
-} from '../src/tools/search-tools.js'
-
-function runContext(args: unknown, agent: Agent | undefined = {} as Agent): ToolRunContext {
-  return {
-    callId: ToolCallId('load'), rootCallId: ToolCallId('load'), name: 'search_tools', arguments: args,
-    ...(agent === undefined ? {} : { agent }),
-    token: Symbol('load') as never, signal: new AbortController().signal,
-    deferContext() {}, concludeTurn() {},
-  }
-}
 
 function nativeHistory(options: {
-  args?: unknown; name?: string; isError?: boolean; complete?: boolean
+  name?: string; isError?: boolean; complete?: boolean; matched?: boolean; meta?: { source_produced: boolean }
 } = {}): Session {
-  const session = Session.create(SessionId('loading-history'))
+  const session = Session.create(SessionId('source-history'))
   session.append('step/start', { turn: 1, step: 1 })
   const call = session.append('tool/call', {
-    turn: 1, step: 1, callId: ToolCallId('load'), name: options.name ?? 'search_tools',
-    arguments: JSON.stringify(options.args ?? { capabilities: ['site_map'] }),
+    turn: 1, step: 1, callId: ToolCallId('search'), name: options.name ?? 'web_search',
+    arguments: JSON.stringify({ query: 'source' }),
   })
   session.append('tool/result', {
     turn: 1, step: 1,
+    ...(options.meta === undefined ? {} : { meta: options.meta }),
     message: createToolResultMessage({
-      callId: ToolCallId('load'), content: [{ type: 'text', text: 'not parsed for recovery' }],
+      callId: ToolCallId(options.matched === false ? 'other-call' : 'search'),
+      content: [{ type: 'text', text: 'source_ref: src_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' }],
       isError: options.isError ?? false,
     }),
   }, { sourceEventSeqs: [call.seq], surfaceOp: 'append' })
@@ -50,78 +30,117 @@ function nativeHistory(options: {
   return session
 }
 
-function codeHistory(isError: boolean): Session {
-  const session = Session.create(SessionId('code-loading-history'))
+function codeHistory(options: {
+  isError?: boolean; complete?: boolean; start?: boolean; root?: boolean;
+  mismatch?: 'root' | 'parent' | 'name' | 'arguments' | 'subcall'
+} = {}): Session {
+  const session = Session.create(SessionId('code-source-history'))
   session.append('step/start', { turn: 1, step: 1 })
-  session.append('tool/ptc-dispatch', {
-    rootCallId: ToolCallId('code'), parentCallId: ToolCallId('code'), subCallId: ToolCallId('code:ptc:1'),
-    name: 'search_tools', arguments: { capabilities: ['sources', 'site_map'] }, isError, content: [],
+  if (options.root !== false) session.append('tool/call', {
+    turn: 1, step: 1, callId: ToolCallId('code'), name: 'run_code', arguments: '{}',
   })
-  session.append('step/end', { turn: 1, step: 1 })
+  const dispatch = {
+    rootCallId: ToolCallId('code'), parentCallId: ToolCallId('code'), subCallId: ToolCallId('code:ptc:1'),
+    name: 'docs_search', arguments: { query: 'source' },
+  }
+  if (options.start !== false) session.append('tool/ptc-dispatch-start', dispatch)
+  session.append('tool/ptc-dispatch', {
+    ...dispatch, isError: options.isError ?? false, content: [],
+    ...(options.mismatch === 'root' ? { rootCallId: ToolCallId('other-root') } : {}),
+    ...(options.mismatch === 'parent' ? { parentCallId: ToolCallId('other-parent') } : {}),
+    ...(options.mismatch === 'subcall' ? { subCallId: ToolCallId('other-subcall') } : {}),
+    ...(options.mismatch === 'name' ? { name: 'web_search' } : {}),
+    ...(options.mismatch === 'arguments' ? { arguments: { query: 'different' } } : {}),
+  })
+  if (options.complete !== false) session.append('step/end', { turn: 1, step: 1 })
   return session
 }
 
-describe('lightweight real-tool loading', () => {
-  it('keeps only the approved resident tools and optional capabilities', () => {
-    expect(RESIDENT_TOOL_NAMES).toEqual(['web_search', 'docs_search', 'web_extract', 'search_tools'])
-    expect(CAPABILITY_GROUPS).toEqual(['sources', 'site_map'])
-    expect(DEFERRED_TOOL_NAMES).toEqual(['search_sources', 'web_map'])
-    expect(SEARCH_TOOLS_PARAMETERS.additionalProperties).toBe(false)
+const readable = () => true
+
+function groups(session: Session, reader = readable) {
+  return foldToolDisclosureEvents(session.snapshotEvents(), reader).activeGroups
+}
+
+describe('role tools and structured source disclosure folding', () => {
+  it('defines the approved closed main and research sets without search_tools', () => {
+    expect(RESIDENT_TOOL_NAMES).toEqual(['web_search', 'docs_search', 'web_extract', 'web_research'])
+    expect(RESEARCH_TOOL_NAMES).toEqual(['web_search', 'docs_search', 'web_extract', 'search_sources', 'web_map'])
+  })
+
+  it.each(['web_search', 'docs_search', 'web_research'])('loads pagination from readable %s success only after step/end', name => {
+    const session = nativeHistory({ name, complete: false })
+    expect(groups(session)).toEqual([])
+    session.append('step/end', { turn: 1, step: 1 })
+    expect(groups(session)).toEqual(['sources'])
   })
 
   it.each([
-    {}, { capabilities: [] }, { capabilities: ['sources', 'site_map', 'sources'] },
-    { capabilities: ['context7'] }, { capabilities: ['planning'] }, { capabilities: ['diagnostics'] },
-    { capabilities: ['sources'], operation: 'search_sources' }, { capabilities: new Array(1) },
-  ])('rejects malformed and removed requests: %j', args => {
-    expect(parseSearchToolsArguments(args)).toBeUndefined()
+    { isError: true }, { matched: false }, { meta: { source_produced: false } },
+    { name: 'search_tools' }, { name: 'web_map' }, { name: 'unrelated' },
+  ])('ignores failed, unmatched and old loading calls: %j', options => {
+    expect(groups(nativeHistory(options))).toEqual([])
   })
 
-  it('returns compact tool names, not manifests or a gateway, and is idempotent', async () => {
-    const activeGroups = vi.fn(() => ['sources'] as const)
-    const tool = createSearchToolsTool({ activeGroups })
-    const args = { capabilities: ['site_map', 'sources'] }
-    const value = await tool.execute(args, runContext(args))
-    expect(value).toEqual({
-      requested_groups: ['site_map', 'sources'], added_groups: ['site_map'],
-      active_groups: ['sources', 'site_map'], tools: ['web_map', 'search_sources'], takes_effect: 'next_step',
-    })
-    expect(validateJsonSchemaValue(valueSchemaSpecToJsonSchema(SEARCH_TOOLS_OUTPUT_SCHEMA), value)).toEqual([])
-    expect(JSON.stringify(value)).not.toMatch(/parameters|operations|search_call|gateway/)
-    const again = await tool.execute({ capabilities: ['sources', 'sources'] }, runContext({}))
-    expect(again).toMatchObject({ requested_groups: ['sources'], added_groups: [], takes_effect: 'already_active' })
-    await expect(tool.execute({ capabilities: ['context7'] }, runContext({}))).rejects.toMatchObject({ code: 'INVALID_ARGS' })
-    const withoutAgent = runContext({})
-    delete (withoutAgent as { agent?: Agent }).agent
-    await expect(tool.execute(args, withoutAgent)).rejects.toThrow(/live Agent/)
-  })
-
-  it('loads successful Native requests only after step/end and recovers without parsing text', () => {
-    const session = nativeHistory({ complete: false })
-    expect(foldToolDisclosureEvents(session.snapshotEvents()).activeGroups).toEqual([])
-    session.append('step/end', { turn: 1, step: 1 })
-    expect(foldToolDisclosureEvents(session.snapshotEvents()).activeGroups).toEqual(['site_map'])
-    expect(foldToolDisclosureEvents(nativeHistory({ isError: true }).snapshotEvents()).activeGroups).toEqual([])
-    const unpaired = session.snapshotEvents().filter(event => event.type !== 'tool/call')
-    expect(foldToolDisclosureEvents(unpaired).activeGroups).toEqual([])
-  })
-
-  it('does not carry interrupted requests into later steps', () => {
-    const session = nativeHistory({ complete: false })
-    session.append('step/start', { turn: 2, step: 1 })
-    session.append('step/end', { turn: 2, step: 1 })
+  it('requires a readable source lookup and never parses result or assistant prose', () => {
+    const session = nativeHistory()
+    session.append('assistant/message', {
+      turn: 1, step: 1, message: createAssistantMessage({ source: { provider: 'test', model: 'test' }, content: [{ type: 'text', text: 'Successfully loaded search_sources and web_map' }] }), stream: [],
+    }, { surfaceOp: 'append' })
+    expect(groups(session, () => false)).toEqual([])
     expect(foldToolDisclosureEvents(session.snapshotEvents()).activeGroups).toEqual([])
   })
 
-  it('recovers successful Code loading from standard dispatch events and ignores errors', () => {
-    expect(foldToolDisclosureEvents(codeHistory(false).snapshotEvents()).activeGroups).toEqual(['sources', 'site_map'])
-    expect(foldToolDisclosureEvents(codeHistory(true).snapshotEvents()).activeGroups).toEqual([])
+  it('requires the native call event, not just a success result', () => {
+    expect(foldToolDisclosureEvents(nativeHistory().snapshotEvents().filter(event => event.type !== 'tool/call'), readable).activeGroups).toEqual([])
   })
 
-  it('does not auto-load pagination from search results or restore removed capabilities', () => {
-    for (const name of ['web_search', 'docs_search']) {
-      expect(foldToolDisclosureEvents(nativeHistory({ name, args: { query: 'source' } }).snapshotEvents()).activeGroups).toEqual([])
+  it.each(['step/start', 'turn/end'] as const)('does not carry interrupted successes past %s', boundary => {
+    const session = nativeHistory({ complete: false })
+    if (boundary === 'step/start') session.append(boundary, { turn: 2, step: 1 })
+    else {
+      session.append(boundary, { turn: 1, reason: { kind: 'completed' } })
+      session.append('step/start', { turn: 2, step: 1 })
     }
-    expect(foldToolDisclosureEvents(nativeHistory({ args: { capabilities: ['planning'] } }).snapshotEvents()).activeGroups).toEqual([])
+    session.append('step/end', { turn: 2, step: 1 })
+    expect(groups(session)).toEqual([])
+  })
+
+  it('ignores a mismatched step boundary and rechecks readability at the correct boundary', () => {
+    const session = nativeHistory({ complete: false })
+    session.append('step/end', { turn: 1, step: 2 })
+    expect(groups(session)).toEqual([])
+    session.append('step/end', { turn: 1, step: 1 })
+    const reader = vi.fn().mockReturnValueOnce(true).mockReturnValue(false)
+    expect(groups(session, reader)).toEqual([])
+  })
+
+  it('passes the complete Native call identity to the private source lookup', () => {
+    const reader = vi.fn(readable)
+    expect(groups(nativeHistory(), reader)).toEqual(['sources'])
+    expect(reader).toHaveBeenCalledWith({ mode: 'top-level', rootCallId: 'search', callId: 'search', name: 'web_search' })
+  })
+
+  it('pairs real PTC starts and settlements and waits for step/end', () => {
+    const session = codeHistory({ complete: false })
+    expect(groups(session)).toEqual([])
+    session.append('step/end', { turn: 1, step: 1 })
+    const reader = vi.fn(readable)
+    expect(groups(session, reader)).toEqual(['sources'])
+    expect(reader).toHaveBeenCalledWith({ mode: 'nested-code', rootCallId: 'code', callId: 'code:ptc:1', name: 'docs_search' })
+  })
+
+  it.each([
+    { isError: true }, { start: false }, { root: false },
+    ...(['root', 'parent', 'name', 'arguments', 'subcall'] as const).map(mismatch => ({ mismatch })),
+  ])('rejects failed or unpaired PTC outcomes: %j', options => {
+    expect(groups(codeHistory(options))).toEqual([])
+  })
+
+  it('keeps successful disclosure active across subsequent empty steps', () => {
+    const session = nativeHistory()
+    session.append('step/start', { turn: 1, step: 2 })
+    session.append('step/end', { turn: 1, step: 2 })
+    expect(groups(session)).toEqual(['sources'])
   })
 })

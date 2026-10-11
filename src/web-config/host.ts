@@ -11,8 +11,6 @@ import {
   PARALLEL_SEARCH_MODES,
   SUPPLEMENTAL_SEARCH_MAX_SOURCES,
   SEARCH_API_PROTOCOLS,
-  SEARCH_DEPTHS,
-  SEARCH_PROFILES,
   THINKING_LEVELS,
   TOOL_DISCOVERY_MODES,
   WEB_EXTRACT_PROXY_URL_MAX_CHARACTERS,
@@ -109,16 +107,8 @@ function projectProxyUrl(proxyUrl: string | undefined, label: string): string {
 
 function projectConfig(config: SearchEnhanceConfigValue): WebEditableConfig {
   return {
-    defaultProfile: config.defaultProfile,
-    defaultDepth: config.defaultDepth,
     toolTimeoutMs: config.toolTimeoutMs,
     retention: { docsSearchMaxResults: config.retention.docsSearchMaxResults },
-    budgets: Object.fromEntries(Object.entries(config.budgets).map(([profile, depths]) => [
-      profile,
-      Object.fromEntries(Object.entries(depths).map(([depth, budget]) => [
-        depth, { maxVisibleSources: budget.maxVisibleSources },
-      ])),
-    ])),
     toolDiscovery: { mode: config.toolDiscovery.mode },
     supplementalSearch: { ...config.supplementalSearch },
     searchApi: {
@@ -295,8 +285,6 @@ export async function readWebConfigSnapshot(
     base,
     ...(user === undefined ? {} : { user }),
     options: {
-      profiles: [...SEARCH_PROFILES],
-      depths: [...SEARCH_DEPTHS],
       protocols: [...SEARCH_API_PROTOCOLS],
       thinkingLevels: [...THINKING_LEVELS],
       toolDiscoveryModes: [...TOOL_DISCOVERY_MODES],
@@ -305,7 +293,6 @@ export async function readWebConfigSnapshot(
       supplementalSearchMaxSources: SUPPLEMENTAL_SEARCH_MAX_SOURCES,
       docsSearchMinResults: DOCS_SEARCH_DEFAULT_MAX_RESULTS,
       docsSearchMaxResults: DOCS_SEARCH_MAX_RESULTS_LIMIT,
-      visibleSourcesMax: 1000,
     },
     credentials: Object.fromEntries(credentialEntries) as Record<WebCredentialSlot, WebCredentialState>,
     diagnostics: {

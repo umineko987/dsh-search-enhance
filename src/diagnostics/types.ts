@@ -5,8 +5,6 @@ import type {
   FallbackMode,
   MinimumCapabilityProfile,
   SearchApiProtocol,
-  SearchDepth,
-  SearchProfile,
   ThinkingLevel,
 } from '../config.js'
 import type { ProviderErrorKind } from '../provider-runtime/index.js'
@@ -95,8 +93,6 @@ export interface DiagnosticMinimumProfile {
 
 /** Safe deployment facts. Values, refs, endpoints, proxies, and paths do not fit this type. */
 export interface DiagnosticConfigurationStatus {
-  readonly defaultProfile: SearchProfile
-  readonly defaultDepth: SearchDepth
   readonly searchApiProtocol: SearchApiProtocol
   readonly searchModelConfigured: boolean
   readonly thinkingLevel: ThinkingLevel

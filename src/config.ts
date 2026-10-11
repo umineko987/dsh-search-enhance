@@ -8,20 +8,6 @@ import {
   type SmartDirectOperatingSystem,
 } from './providers/smart-direct-profiles.js'
 
-export const SEARCH_PROFILES = [
-  'auto',
-  'coding_docs',
-  'code_examples',
-  'project_research',
-  'academic',
-  'fact_check',
-] as const
-
-export type SearchProfile = (typeof SEARCH_PROFILES)[number]
-
-export const SEARCH_DEPTHS = ['compact', 'normal', 'deep'] as const
-export type SearchDepth = (typeof SEARCH_DEPTHS)[number]
-
 export const TOOL_DISCOVERY_MODES = ['progressive', 'all'] as const
 export type ToolDiscoveryMode = (typeof TOOL_DISCOVERY_MODES)[number]
 
@@ -70,8 +56,12 @@ export interface OutputBudget {
   readonly maxModelTextBytes: number
 }
 
-export type ProfileBudgets = Record<SearchDepth, OutputBudget>
-export type SearchBudgets = Record<SearchProfile, ProfileBudgets>
+export const WEB_SEARCH_OUTPUT_BUDGET: Readonly<OutputBudget> = Object.freeze({
+  maxAnswerCharacters: 6000,
+  maxVisibleSources: 8,
+  maxModelTextBytes: 12 * 1024,
+})
+export const DOCS_SEARCH_MODEL_TEXT_MAX_BYTES = 9000
 
 export const SUPPLEMENTAL_SEARCH_PROVIDERS = ['exa', 'tavily', 'firecrawl', 'parallel'] as const
 export type SupplementalSearchProvider = (typeof SUPPLEMENTAL_SEARCH_PROVIDERS)[number]
@@ -318,15 +308,12 @@ export interface SiteMapConfig {
 }
 
 export interface Config {
-  readonly defaultProfile: SearchProfile
-  readonly defaultDepth: SearchDepth
   readonly searchApi: SearchApiConfig
   readonly providers: ProviderConfig
   readonly fallbackMode: FallbackMode
   readonly minimumProfile: MinimumCapabilityProfile
   readonly toolTimeoutMs: number
   readonly retry: RetryConfig
-  readonly budgets: SearchBudgets
   readonly supplementalSearch: SupplementalSearchConfig
   readonly retention: RetentionConfig
   readonly cache: CacheConfig
@@ -348,39 +335,6 @@ export const DEFAULT_CREDENTIAL_REFS: CredentialReferences = Object.freeze({
   firecrawl: credentialRef('FIRECRAWL_API_KEY'),
   parallel: credentialRef('PARALLEL_API_KEY'),
 })
-
-export const DEFAULT_SEARCH_BUDGETS: SearchBudgets = {
-  auto: {
-    compact: { maxAnswerCharacters: 6000, maxVisibleSources: 8, maxModelTextBytes: 12 * 1024 },
-    normal: { maxAnswerCharacters: 12000, maxVisibleSources: 12, maxModelTextBytes: 20 * 1024 },
-    deep: { maxAnswerCharacters: 24000, maxVisibleSources: 20, maxModelTextBytes: 32 * 1024 },
-  },
-  coding_docs: {
-    compact: { maxAnswerCharacters: 3500, maxVisibleSources: 6, maxModelTextBytes: 9000 },
-    normal: { maxAnswerCharacters: 7000, maxVisibleSources: 10, maxModelTextBytes: 14 * 1024 },
-    deep: { maxAnswerCharacters: 14000, maxVisibleSources: 16, maxModelTextBytes: 24 * 1024 },
-  },
-  code_examples: {
-    compact: { maxAnswerCharacters: 4000, maxVisibleSources: 8, maxModelTextBytes: 10000 },
-    normal: { maxAnswerCharacters: 8000, maxVisibleSources: 12, maxModelTextBytes: 16 * 1024 },
-    deep: { maxAnswerCharacters: 16000, maxVisibleSources: 20, maxModelTextBytes: 26 * 1024 },
-  },
-  project_research: {
-    compact: { maxAnswerCharacters: 6000, maxVisibleSources: 10, maxModelTextBytes: 12 * 1024 },
-    normal: { maxAnswerCharacters: 12000, maxVisibleSources: 16, maxModelTextBytes: 20 * 1024 },
-    deep: { maxAnswerCharacters: 24000, maxVisibleSources: 24, maxModelTextBytes: 32 * 1024 },
-  },
-  academic: {
-    compact: { maxAnswerCharacters: 12000, maxVisibleSources: 20, maxModelTextBytes: 24 * 1024 },
-    normal: { maxAnswerCharacters: 18000, maxVisibleSources: 30, maxModelTextBytes: 32 * 1024 },
-    deep: { maxAnswerCharacters: 32000, maxVisibleSources: 40, maxModelTextBytes: 48 * 1024 },
-  },
-  fact_check: {
-    compact: { maxAnswerCharacters: 7000, maxVisibleSources: 12, maxModelTextBytes: 16 * 1024 },
-    normal: { maxAnswerCharacters: 12000, maxVisibleSources: 18, maxModelTextBytes: 24 * 1024 },
-    deep: { maxAnswerCharacters: 22000, maxVisibleSources: 28, maxModelTextBytes: 36 * 1024 },
-  },
-}
 
 /** Source-count ceiling for each explicitly selected supplementary Provider. */
 export const SUPPLEMENTAL_SEARCH_MAX_SOURCES = 100
@@ -439,20 +393,6 @@ const credentialReference = (defaultValue: CredentialRef) =>
     .role('credential-ref')
     .default(defaultValue) as Schema<CredentialRef>
 
-const outputBudget = (defaults: OutputBudget): Schema<OutputBudget> =>
-  Schema.object({
-    maxAnswerCharacters: nonNegativeInteger(defaults.maxAnswerCharacters, 100_000),
-    maxVisibleSources: nonNegativeInteger(defaults.maxVisibleSources, 1000),
-    maxModelTextBytes: positiveInteger(defaults.maxModelTextBytes, 1024 * 1024),
-  }) as Schema<OutputBudget>
-
-const profileBudgets = (profile: SearchProfile): Schema<ProfileBudgets> =>
-  Schema.object({
-    compact: outputBudget(DEFAULT_SEARCH_BUDGETS[profile].compact),
-    normal: outputBudget(DEFAULT_SEARCH_BUDGETS[profile].normal),
-    deep: outputBudget(DEFAULT_SEARCH_BUDGETS[profile].deep),
-  }) as Schema<ProfileBudgets>
-
 const discoveryProvider = (
   baseUrl: string,
   ref: CredentialRef,
@@ -471,8 +411,6 @@ const remoteExtract = (): Schema<RemoteExtractConfig> => Schema.object({
 }) as Schema<RemoteExtractConfig>
 
 export const Config: Schema<Config> = Schema.object({
-  defaultProfile: Schema.union(SEARCH_PROFILES).default('auto'),
-  defaultDepth: Schema.union(SEARCH_DEPTHS).default('compact'),
   searchApi: Schema.object({
     baseUrl: httpUrl('https://api.x.ai/v1'),
     protocol: Schema.union(SEARCH_API_PROTOCOLS).default('completions'),
@@ -503,14 +441,6 @@ export const Config: Schema<Config> = Schema.object({
     maxDelayMs: nonNegativeInteger(10_000, 300_000),
     maxTotalDelayMs: nonNegativeInteger(20_000, 900_000),
     jitterRatio: Schema.number().min(0).max(1).default(0.2),
-  }),
-  budgets: Schema.object({
-    auto: profileBudgets('auto'),
-    coding_docs: profileBudgets('coding_docs'),
-    code_examples: profileBudgets('code_examples'),
-    project_research: profileBudgets('project_research'),
-    academic: profileBudgets('academic'),
-    fact_check: profileBudgets('fact_check'),
   }),
   supplementalSearch: Schema.object({
     exa: Schema.boolean().default(false),
@@ -548,7 +478,7 @@ export const Config: Schema<Config> = Schema.object({
     maxEntries: positiveInteger(500, 100_000),
   }),
   toolDiscovery: Schema.object({
-    mode: Schema.union(TOOL_DISCOVERY_MODES).default('progressive'),
+    mode: Schema.union(TOOL_DISCOVERY_MODES).default('progressive').description('progressive 自动启用可读来源的分页；all 提前启用分页，仍不向主 Agent 提供站点映射或工具加载器。'),
   }),
   diagnostics: Schema.object({
     timeoutMs: positiveInteger(30_000, 120_000),

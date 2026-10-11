@@ -57,21 +57,8 @@ import {
 
 const sourceRef = 'src_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' as SourceRef
 
-function resolvedConfig(maxModelTextBytes = 4096) {
-  const base = Config({} as never)
-  return {
-    ...base,
-    budgets: {
-      ...base.budgets,
-      auto: {
-        ...base.budgets.auto,
-        compact: {
-          ...base.budgets.auto.compact,
-          maxModelTextBytes,
-        },
-      },
-    },
-  }
+function resolvedConfig() {
+  return Config({} as never)
 }
 
 function orchestrationResult(): SearchOrchestrationResult {
@@ -97,8 +84,6 @@ function orchestrationResult(): SearchOrchestrationResult {
     },
     persistence: {
       query: 'search query',
-      profile: 'auto',
-      depth: 'compact',
       collectionTruncated: false,
       sources: [
         { url: 'https://visible.test/a', provider: 'search-api' },
@@ -107,8 +92,6 @@ function orchestrationResult(): SearchOrchestrationResult {
     },
     diagnostics: {
       routing: {
-        profile: 'auto',
-        depth: 'compact',
         supplementalProviders: [],
         sourcesPerProvider: 5,
       },
@@ -123,8 +106,6 @@ function storedRecord(truncated = false): StoredSourceRecord {
     sourceRef,
     ownerSessionId: 'session-a',
     query: 'search query',
-    profile: 'auto',
-    depth: 'compact',
     call: {
       mode: 'top-level',
       rootCallId: 'call-a',
@@ -179,8 +160,6 @@ function docsResult(overrides: Partial<DocumentationSearchResult> = {}): Documen
     ],
     persistence: {
       query: 'React useEffect API docs',
-      profile: 'coding_docs',
-      depth: 'compact',
       sources: [
         { provider: 'context7', url: 'https://react.dev/reference/react/useEffect' },
         { provider: 'exa', url: 'https://react.dev/reference/react' },
@@ -336,8 +315,6 @@ describe('docs_search execution and durable publication', () => {
               sourceRef,
               ownerSessionId: String(session.id),
               query: candidate.query,
-              profile: candidate.profile,
-              depth: candidate.depth,
               call,
               sources: candidate.sources,
               totalBeforeRetention: candidate.sources.length,
@@ -407,8 +384,6 @@ describe('docs_search execution and durable publication', () => {
       warnings: [],
       persistence: {
         query: 'React useEffect API docs',
-        profile: 'coding_docs',
-        depth: 'compact',
         sources: [],
         collectionTruncated: false,
       },
@@ -482,18 +457,10 @@ describe('docs_search execution and durable publication', () => {
 })
 
 describe('model-facing tool schemas', () => {
-  it('exposes only query/profile/depth for web_search', () => {
+  it('exposes only query for web_search', () => {
     const schema = parameterSchemaSpecToJsonSchema(WEB_SEARCH_PARAMETERS)
-    expect(Object.keys(schema.properties)).toEqual(['query', 'profile', 'depth'])
+    expect(Object.keys(schema.properties)).toEqual(['query'])
     expect(schema.required).toEqual(['query'])
-    expect(schema.properties.profile).toMatchObject({
-      enum: ['auto', 'coding_docs', 'code_examples', 'project_research', 'academic', 'fact_check'],
-      type: 'string',
-    })
-    expect(schema.properties.depth).toMatchObject({
-      enum: ['compact', 'normal', 'deep'],
-      type: 'string',
-    })
     expect(JSON.stringify(schema)).not.toMatch(/provider|model|credential|api.?key|budget/i)
   })
 
@@ -551,7 +518,7 @@ describe('canonical Consumer projections', () => {
       total_sources: 2,
       returned_sources: 1,
       evidence_level: 'discovery',
-      model_text_max_bytes: 4096,
+      model_text_max_bytes: 12 * 1024,
     })
     expect(output.sources).toEqual([{
       url: 'https://visible.test/a',
@@ -649,7 +616,7 @@ describe('canonical Consumer projections', () => {
     const withRetentionCut = projectDocsSearchOutput(
       result,
       resolvedConfig(),
-      { sourceRef, record: { ...storedRecord(true), profile: 'coding_docs', depth: 'compact' } },
+      { sourceRef, record: storedRecord(true) },
     )
     expect(withRetentionCut.warnings).toContainEqual({ code: 'source_retention_truncated' })
   })
@@ -1003,7 +970,7 @@ describe('pure Web card projections', () => {
   })
 
   it('produces the same web_search Web card from live and replayed metadata', () => {
-    const args = { query: 'card query', profile: 'auto' as const }
+    const args = { query: 'card query' }
     const value = resultWithLimit(4096)
     const liveMeta = webSearchPresentationMeta(args, value)
     const replayMeta = JSON.parse(JSON.stringify(liveMeta))

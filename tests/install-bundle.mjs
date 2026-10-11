@@ -150,7 +150,12 @@ async function verifyWebStartup(env) {
     assert.match(await page.text(), /dsh-search-enhance/u)
     const config = await fetch(`${origin}/dsh-search-enhance/config`, { headers, signal: AbortSignal.timeout(5_000) })
     assert.equal(config.status, 200, 'Search Enhance settings route did not activate')
-    assert.equal((await config.json()).namespace, 'search-enhance')
+    const snapshot = await config.json()
+    assert.equal(snapshot.namespace, 'search-enhance')
+    assert.equal('research' in snapshot.value, false)
+    assert.equal('research' in (snapshot.base ?? {}), false)
+    assert.equal(Object.keys(snapshot.options).some(key => key.startsWith('research')), false)
+    assert.equal(snapshot.value.toolTimeoutMs, 180_000)
     assert.equal(child.exitCode, null, 'dsh web exited after serving its UI')
   } finally {
     clearTimeout(startupTimer)
@@ -176,7 +181,7 @@ if (dshVersion.stdout.trim() !== '0.2.0-rc.2') {
 
 const dshHome = await mkdtemp(join(tmpdir(), 'dsh-search-enhance-install-'))
 const profileDir = join(dshHome, 'profiles', profileName)
-const childEnvironment = { ...process.env, DSH_HOME: dshHome }
+const childEnvironment = { ...process.env, DSH_HOME: dshHome, pnpm_config_ignore_scripts: 'true', pnpm_config_strict_dep_builds: 'false' }
 for (const name of credentialNames) delete childEnvironment[name]
 
 try {
@@ -226,6 +231,10 @@ try {
   assert.equal(resolvedClient, join(installedRoot, 'client/client.js'))
   assert.match(await readFile(resolvedClient, 'utf8'), /^window\.__ModuleLoader__\.load\(\{\s*id: "dsh-search-enhance"/u)
   const installedPackage = JSON.parse(await readFile(profileRequire.resolve('dsh-search-enhance/package.json'), 'utf8'))
+  for (const name of ['@deepseek-ai/dsh-subagent', '@deepseek-ai/dsh-subagent-dsh-sdk', '@deepseek-ai/dsh-sdk-client']) {
+    assert.equal(installedPackage.dependencies[name], '0.2.0-rc.2')
+    assert.equal(JSON.parse(await readFile(profileRequire.resolve(`${name}/package.json`), 'utf8')).version, '0.2.0-rc.2')
+  }
   assert.deepEqual(installedPackage.dsh.client, {
     inject: [
       '@deepseek-ai/dsh-client-locale',
@@ -238,6 +247,10 @@ try {
     await realpath(join(installedRoot, installedPackage.exports['./client'].types)),
     await realpath(join(installedRoot, 'client/types/client/index.d.ts')),
   )
+
+  await run(process.execPath, [join(packageRoot, 'tests/research-sdk-smoke.mjs'), '--package-root', installedRoot, '--profile-dir', profileDir], {
+    cwd: packageRoot, env: childEnvironment, label: 'packed research child entry and SDK subprocess',
+  })
 
   await verifyWebStartup(childEnvironment)
 

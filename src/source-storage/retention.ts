@@ -43,8 +43,6 @@ export function retainSourceRecord(
       sourceRef: input.sourceRef,
       ownerSessionId: input.ownerSessionId,
       query: input.candidate.query,
-      profile: input.candidate.profile,
-      depth: input.candidate.depth,
       call: input.call,
       sources,
       totalBeforeRetention,

@@ -185,6 +185,21 @@ export class SourceRecordStore {
     return Object.freeze({ record: stored, state: 'found' })
   }
 
+  /** Match every retained call field and reuse ref authorization; ambiguous matches fail closed. */
+  sourceRefForCall(session: Session, call: SourceCallIdentity): SourceRef | undefined {
+    this.assertOpen()
+    let found: SourceRef | undefined
+    for (const [ref, record] of this.table.entries()) {
+      if (record.call.mode !== call.mode || record.call.rootCallId !== call.rootCallId
+        || record.call.callId !== call.callId || record.call.name !== call.name) continue
+      const lookup = this.lookup(session, ref)
+      if (lookup.state !== 'found' || lookup.record.sources.length === 0) continue
+      if (found !== undefined) return undefined
+      found = ref
+    }
+    return found
+  }
+
   page(session: Session, request: SourcePageRequest): SourcePageResult {
     const parsed = parseSourcePageRequest(request, this.maxPageSize)
     const lookup = this.lookup(session, parsed.sourceRef)

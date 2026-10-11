@@ -11,7 +11,7 @@ import {
   SearchEnhancePluginCard,
   type SearchEnhancePluginCardProps,
 } from '../src/client/SearchEnhancePluginCard.js'
-import { en, type SearchEnhanceLocaleKey } from '../src/client/locales.js'
+import { en, zh, type SearchEnhanceLocaleKey } from '../src/client/locales.js'
 import {
   WEB_SUPPLEMENTAL_SEARCH_PROVIDERS,
   type WebConfigSnapshot,
@@ -68,13 +68,8 @@ function snapshot(overrides: Partial<WebConfigSnapshot> = {}): WebConfigSnapshot
     applies: 'live',
     writable: true,
     value: {
-      defaultProfile: 'auto',
-      defaultDepth: 'compact',
       toolTimeoutMs: 180_000,
       retention: { docsSearchMaxResults: 20 },
-      budgets: Object.fromEntries(['auto', 'coding_docs', 'code_examples', 'project_research', 'academic', 'fact_check']
-        .map(profile => [profile, Object.fromEntries(['compact', 'normal', 'deep']
-          .map(depth => [depth, { maxVisibleSources: depth === 'compact' ? 8 : 12 }]))])),
       toolDiscovery: { mode: 'progressive' },
       supplementalSearch: { exa: false, tavily: false, firecrawl: false, parallel: false, maxSourcesPerProvider: 5 },
       searchApi: {
@@ -115,8 +110,6 @@ function snapshot(overrides: Partial<WebConfigSnapshot> = {}): WebConfigSnapshot
       },
     },
     options: {
-      profiles: ['auto', 'coding_docs', 'code_examples', 'project_research', 'academic', 'fact_check'],
-      depths: ['compact', 'normal', 'deep'],
       protocols: ['completions', 'responses'],
       thinkingLevels: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
       toolDiscoveryModes: ['progressive', 'all'],
@@ -125,7 +118,6 @@ function snapshot(overrides: Partial<WebConfigSnapshot> = {}): WebConfigSnapshot
       supplementalSearchMaxSources: 100,
       docsSearchMinResults: 6,
       docsSearchMaxResults: 20,
-      visibleSourcesMax: 1000,
     },
     credentials: {
       searchApi: credentialState('TEST_GROK_SEARCH_KEY', true, 'file'),
@@ -298,7 +290,65 @@ describe('Search Enhance browser contribution', () => {
     expect(document.querySelector('details')).toBeNull()
   })
 
-  it('explains and saves display and request limits as independent settings', async () => {
+  it('saves single-tool and backend timeouts with no research settings or reset button', async () => {
+    const initial = snapshot()
+    let patchBody: unknown
+    const next = snapshot({ revision: 1, value: {
+      ...initial.value, toolTimeoutMs: 90_000, searchApi: { ...initial.value.searchApi, timeoutMs: 30_000 },
+    } })
+    const fetchMock = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      if (requestMethod(init) === 'GET') return response(initial)
+      patchBody = JSON.parse(String(init?.body)) as unknown
+      return response(next)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<SearchEnhancePluginCard t={t as SearchEnhancePluginCardProps['t']} />)
+    await openCard()
+    expect(screen.queryByLabelText('Research total timeout (ms)')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Reset research timeout to default' })).toBeNull()
+    expect(screen.getByText(en.toolTimeoutHint)).toBeTruthy()
+    expect(screen.queryByText(/60000–3600000/)).toBeNull()
+    const input = screen.getByLabelText(en.toolTimeoutMs) as HTMLInputElement
+    fireEvent.change(input, { target: { value: '90000' } })
+    fireEvent.change(screen.getByLabelText(`${en.searchApiCredential} ${en.timeoutMs}`), { target: { value: '30000' } })
+    fireEvent.click(screen.getByRole('button', { name: en.save }))
+    expect(await screen.findByText(en.savedLive)).toBeTruthy()
+    expect(patchBody).toEqual({ expectedRevision: 0, mutations: [
+      { op: 'set', path: ['toolTimeoutMs'], value: 90_000 },
+      { op: 'set', path: ['searchApi', 'timeoutMs'], value: 30_000 },
+    ] })
+    expect(initial.value.toolTimeoutMs).toBe(180_000)
+    fireEvent.change(input, { target: { value: '120000' } })
+    fireEvent.click(screen.getByRole('button', { name: en.discard }))
+    expect(input.value).toBe('90000')
+    expect((screen.getByRole('button', { name: en.save }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it.each(['0', '-1', '90000.5', ''])('blocks invalid single-tool timeout input "%s"', async value => {
+    const fetchMock = vi.fn(async () => response(snapshot()))
+    vi.stubGlobal('fetch', fetchMock)
+    render(<SearchEnhancePluginCard t={t as SearchEnhancePluginCardProps['t']} />)
+    await openCard()
+    fireEvent.change(screen.getByLabelText(en.toolTimeoutMs), { target: { value } })
+    expect(screen.getByRole('alert').textContent).toBe(en.invalidNumber)
+    expect((screen.getByRole('button', { name: en.save }) as HTMLButtonElement).disabled).toBe(true)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps Chinese single-tool settings without a research timeout control', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => response(snapshot())))
+    const translate = ((key: SearchEnhanceLocaleKey) => zh[key]) as SearchEnhancePluginCardProps['t']
+    render(<SearchEnhancePluginCard t={translate} />)
+    fireEvent.click(screen.getByRole('button', { name: `${zh.expand}: ${zh.title}` }))
+    await screen.findByDisplayValue('https://grok-gateway.example/v1')
+    expect(screen.queryByLabelText('研究总时限（毫秒）')).toBeNull()
+    expect(screen.queryByRole('button', { name: '恢复研究时限默认值' })).toBeNull()
+    expect(screen.queryByText(/60000–3600000/)).toBeNull()
+    expect((screen.getByLabelText(zh.toolTimeoutMs) as HTMLInputElement).value).toBe('180000')
+    expect(screen.getByText(zh.toolTimeoutHint)).toBeTruthy()
+  })
+
+  it('keeps docs request settings without strategy controls', async () => {
     const initial = snapshot()
     let patchBody: unknown
     vi.stubGlobal('fetch', vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
@@ -308,23 +358,18 @@ describe('Search Enhance browser contribution', () => {
     }))
     render(<SearchEnhancePluginCard t={t as SearchEnhancePluginCardProps['t']} />)
     await openCard()
-    expect(screen.getByText(en.maxVisibleSourcesHint)).toBeTruthy()
+    expect(screen.queryByRole('combobox', { name: /Default profile|Default depth/ })).toBeNull()
+    expect(screen.queryByLabelText('Initial web_search source limit')).toBeNull()
     expect(screen.getByText(en.docsSearchMaxResultsHint)).toBeTruthy()
     fireEvent.change(screen.getByLabelText(en.docsSearchMaxResults), { target: { value: '21' } })
     expect((screen.getByRole('button', { name: en.save }) as HTMLButtonElement).disabled).toBe(true)
     fireEvent.change(screen.getByLabelText(en.docsSearchMaxResults), { target: { value: '10' } })
-    fireEvent.change(screen.getByLabelText(en.maxVisibleSources), { target: { value: '16' } })
-    fireEvent.change(screen.getByRole('combobox', { name: /Default depth/ }), { target: { value: 'normal' } })
-    expect((screen.getByLabelText(en.maxVisibleSources) as HTMLInputElement).value).toBe('12')
-    fireEvent.change(screen.getByRole('combobox', { name: /Default depth/ }), { target: { value: 'compact' } })
-    expect((screen.getByLabelText(en.maxVisibleSources) as HTMLInputElement).value).toBe('16')
     fireEvent.click(screen.getByRole('button', { name: en.save }))
     expect(await screen.findByText(en.savedLive)).toBeTruthy()
     expect(patchBody).toEqual({ expectedRevision: 0, mutations: [
       { op: 'set', path: ['retention', 'docsSearchMaxResults'], value: 10 },
-      { op: 'set', path: ['budgets', 'auto', 'compact', 'maxVisibleSources'], value: 16 },
     ] })
-    expect(initial.value.budgets.auto?.compact?.maxVisibleSources).toBe(8)
+    expect(initial.value.retention.docsSearchMaxResults).toBe(20)
   })
   it('saves endpoints and connection settings from their credential cards without sending keys', async () => {
     const initial = snapshot()

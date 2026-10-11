@@ -20,12 +20,8 @@ export const WEB_SUPPLEMENTAL_SEARCH_PROVIDERS = ['exa', 'tavily', 'firecrawl', 
 export const WEB_EXTRACT_PROVIDER_KEYS = ['tavily', 'firecrawl', 'parallel', 'smartDirect', 'direct'] as const
 
 export const WEB_EDITABLE_PATHS: readonly (readonly string[])[] = [
-  ['defaultProfile'],
-  ['defaultDepth'],
   ['toolTimeoutMs'],
   ['retention', 'docsSearchMaxResults'],
-  ...['auto', 'coding_docs', 'code_examples', 'project_research', 'academic', 'fact_check']
-    .flatMap(profile => ['compact', 'normal', 'deep'].map(depth => ['budgets', profile, depth, 'maxVisibleSources'])),
   ['toolDiscovery', 'mode'],
   ...WEB_SUPPLEMENTAL_SEARCH_PROVIDERS.map(provider => ['supplementalSearch', provider]),
   ['supplementalSearch', 'maxSourcesPerProvider'],
@@ -77,11 +73,8 @@ export interface WebProxyConfig {
 }
 
 export interface WebEditableConfig {
-  defaultProfile: string
-  defaultDepth: string
   toolTimeoutMs: number
   retention: { docsSearchMaxResults: number }
-  budgets: Record<string, Record<string, { maxVisibleSources: number }>>
   toolDiscovery: {
     mode: string
   }
@@ -114,8 +107,6 @@ export type WebConfigLayer = {
 }
 
 export interface WebConfigOptions {
-  profiles: readonly string[]
-  depths: readonly string[]
   protocols: readonly string[]
   thinkingLevels: readonly string[]
   toolDiscoveryModes: readonly string[]
@@ -124,7 +115,6 @@ export interface WebConfigOptions {
   supplementalSearchMaxSources: number
   docsSearchMinResults: number
   docsSearchMaxResults: number
-  visibleSourcesMax: number
 }
 
 export interface WebCredentialState {

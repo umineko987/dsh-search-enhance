@@ -2,10 +2,6 @@ import { defineDomain, domainTable, type Domain } from '@deepseek-ai/dsh-storage
 import { z } from 'zod'
 
 import {
-  SEARCH_DEPTHS,
-  SEARCH_PROFILES,
-} from '../config.js'
-import {
   SOURCE_CALL_MODES,
   SOURCE_CATEGORIES,
   SOURCE_PROVIDERS,
@@ -53,8 +49,9 @@ export const StoredSourceRecordSchema: z.ZodType<StoredSourceRecord> = z.object(
   sourceRef: SourceRefSchema,
   ownerSessionId: z.string().min(1).max(4096),
   query: z.string().min(1).max(1_000_000),
-  profile: z.enum(SEARCH_PROFILES),
-  depth: z.enum(SEARCH_DEPTHS),
+  // Accept and discard routing metadata from existing stored records.
+  profile: z.string().max(128).optional(),
+  depth: z.string().max(128).optional(),
   call: SourceCallIdentitySchema,
   sources: z.array(CanonicalSourceSchema).max(5000),
   totalBeforeRetention: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
@@ -77,7 +74,7 @@ export const StoredSourceRecordSchema: z.ZodType<StoredSourceRecord> = z.object(
       path: ['truncated'],
     })
   }
-}) as z.ZodType<StoredSourceRecord>
+}).transform(({ profile: _profile, depth: _depth, ...record }) => record) as z.ZodType<StoredSourceRecord>
 
 export const SOURCE_RECORD_DOMAIN_SPEC = defineDomain({
   name: SOURCE_RECORD_DOMAIN_NAME,

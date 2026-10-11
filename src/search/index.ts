@@ -1,14 +1,8 @@
 export {
-  buildSearchProfilePrompt,
-  parseSearchDepth,
-  parseSearchProfile,
   resolveSearchStrategy,
-  SEARCH_PROFILE_PROMPTS,
   SEARCH_PROMPT_BASE,
-  validateOutputBudget,
   type ResolvedSearchStrategy,
-  type SearchStrategyOverrides,
-} from './profiles.js'
+} from './policy.js'
 export {
   DEFAULT_SEARCH_RESPONSE_PARSE_LIMITS,
   parseSearchAnswerText,

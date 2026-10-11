@@ -43,8 +43,6 @@ function record(count = 5): Readonly<StoredSourceRecord> {
     },
     candidate: {
       collectionTruncated: false,
-      depth: 'compact',
-      profile: 'auto',
       query: 'pagination query',
       sources: Array.from({ length: count }, (_value, index) => source(index)),
     },

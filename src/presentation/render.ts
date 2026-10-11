@@ -39,7 +39,7 @@ function renderWithBoundedNotice(text: string, notice: string | undefined, maxim
 
 function sourceLoadingNotice(sourceRef: string | undefined): string | undefined {
   if (sourceRef === undefined) return undefined
-  return `Source reference: ${sourceRef}\n\nFor more sources, call search_tools({ capabilities: ["sources"] }), then call search_sources directly on the next step.`
+  return `Source reference: ${sourceRef}\n\nFor more sources, call search_sources directly on the next step; it becomes available automatically.`
 }
 
 function warningText(warning: WebSearchWarning): string {

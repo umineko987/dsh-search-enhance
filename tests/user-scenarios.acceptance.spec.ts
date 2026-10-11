@@ -18,7 +18,6 @@ import type {
   SourceProviderSearchInput,
   SourceProviderSearchOutcome,
 } from '../src/providers/types.js'
-import { resolveSearchStrategy } from '../src/search/index.js'
 import { projectWebSearchOutput } from '../src/tools/web-search.js'
 import {
   ACCEPTANCE_SEARCH_PROVIDERS,
@@ -28,7 +27,6 @@ import {
   type UserScenarioAcceptanceFixture,
 } from './fixtures/user-scenarios.js'
 
-const NUMERIC_EVIDENCE_POLICY = 'If a key numeric claim lacks sufficient independent support, label that number `unverified` or `unresolved`.'
 
 type SupplementalProvider = Exclude<AcceptanceSearchProvider, 'search-api'>
 
@@ -84,8 +82,6 @@ function scenarioConfig(
   fixture: Readonly<UserScenarioAcceptanceFixture>,
 ): SearchEnhanceConfig {
   const base = Config({
-    defaultDepth: 'compact',
-    defaultProfile: fixture.profile,
     fallbackMode: 'auto',
     searchApi: { model: 'acceptance-model' },
     retry: {
@@ -100,17 +96,6 @@ function scenarioConfig(
   return {
     ...base,
     toolTimeoutMs: 10_000,
-    budgets: {
-      ...base.budgets,
-      [fixture.profile]: {
-        ...base.budgets[fixture.profile],
-        compact: {
-          maxAnswerCharacters: 600,
-          maxVisibleSources: 12,
-          maxModelTextBytes: 16 * 1024,
-        },
-      },
-    },
     supplementalSearch: { exa: true, tavily: true, firecrawl: true, parallel: false, maxSourcesPerProvider: 4 },
     retention: {
       ...base.retention,
@@ -164,8 +149,6 @@ async function executeScenario(
     tavily: providers.tavily,
   })
   const result = await orchestrator.search({
-    depth: 'compact',
-    profile: fixture.profile,
     query: fixture.query,
     signal: new AbortController().signal,
   })
@@ -188,8 +171,7 @@ function expectExactlyOneBoundedSearch(executed: ExecutedScenario): void {
   expect(mainInput).toBeDefined()
   if (mainInput === undefined) throw new Error('acceptance main search was not dispatched')
   expect(Array.from(executed.output.answer ?? '').length).toBeLessThanOrEqual(
-    executed.config.budgets[mainInput.strategy.profile][mainInput.strategy.depth]
-      .maxAnswerCharacters,
+    mainInput.strategy.budget.maxAnswerCharacters,
   )
   expect(Buffer.byteLength(executed.modelText, 'utf8')).toBeLessThanOrEqual(
     executed.output.model_text_max_bytes,
@@ -209,11 +191,6 @@ function expectExecutableDiscoveryRecord(
 
 describe('fixed user-scenario acceptance gate', () => {
   it('returns one bounded financial fact-check with ranked, de-duplicated, conflicting discovery evidence', async () => {
-    const strategy = resolveSearchStrategy(scenarioConfig(FINANCIAL_FACT_CHECK_ACCEPTANCE), {
-      depth: 'compact',
-      profile: 'fact_check',
-    })
-    expect(strategy.profilePrompt).toContain(NUMERIC_EVIDENCE_POLICY)
 
     const executed = await executeScenario(FINANCIAL_FACT_CHECK_ACCEPTANCE)
     expectExactlyOneBoundedSearch(executed)

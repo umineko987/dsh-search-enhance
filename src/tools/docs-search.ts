@@ -7,6 +7,7 @@ import type { Session } from '@deepseek-ai/dsh-session'
 
 import {
   DOCS_SEARCH_DEFAULT_MAX_RESULTS,
+  DOCS_SEARCH_MODEL_TEXT_MAX_BYTES,
   type Config,
 } from '../config.js'
 import type {
@@ -147,7 +148,7 @@ export function projectDocsSearchOutput(
     truncated: result.truncated || storageTruncated,
     evidence_level: 'discovery',
     warnings,
-    model_text_max_bytes: config.budgets.coding_docs.compact.maxModelTextBytes,
+    model_text_max_bytes: DOCS_SEARCH_MODEL_TEXT_MAX_BYTES,
   }, config.retention.canonicalOutputMaxBytes)
 }
 

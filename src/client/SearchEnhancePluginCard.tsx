@@ -119,13 +119,8 @@ const successStyle: CSSProperties = { ...bodyStyle, color: 'var(--dsw-alias-stat
 
 function cloneConfig(config: WebEditableConfig): WebEditableConfig {
   return {
-    defaultProfile: config.defaultProfile,
-    defaultDepth: config.defaultDepth,
     toolTimeoutMs: config.toolTimeoutMs,
     retention: { ...config.retention },
-    budgets: Object.fromEntries(Object.entries(config.budgets).map(([profile, depths]) => [
-      profile, Object.fromEntries(Object.entries(depths).map(([depth, budget]) => [depth, { ...budget }])),
-    ])),
     toolDiscovery: { ...config.toolDiscovery },
     supplementalSearch: { ...config.supplementalSearch },
     searchApi: { ...config.searchApi },
@@ -403,10 +398,6 @@ export function SearchEnhancePluginCard({ t }: SearchEnhancePluginCardProps) {
     && Number.isInteger(draft.retention.docsSearchMaxResults)
     && draft.retention.docsSearchMaxResults >= snapshot.options.docsSearchMinResults
     && draft.retention.docsSearchMaxResults <= snapshot.options.docsSearchMaxResults
-    && Object.values(draft.budgets).every(depths => Object.values(depths).every(budget =>
-      Number.isInteger(budget.maxVisibleSources)
-      && budget.maxVisibleSources >= 0
-      && budget.maxVisibleSources <= snapshot.options.visibleSourcesMax))
   const editable = phase === 'ready' && snapshot?.writable === true && !saving
 
   const updateProvider = (provider: WebCredentialSlot, value: WebDiscoveryProviderConfig): void => {
@@ -598,50 +589,12 @@ export function SearchEnhancePluginCard({ t }: SearchEnhancePluginCardProps) {
                   <p style={{ ...bodyStyle, marginTop: 4 }}>{t('strategyIntro')}</p>
                 </div>
                 <div style={gridStyle}>
-                  <Field label={t('defaultProfile')} overridden={isOverridden(snapshot.user, ['defaultProfile'])} t={t}>
-                    <Select
-                      value={draft.defaultProfile}
-                      options={snapshot.options.profiles}
-                      disabled={!editable}
-                      onChange={defaultProfile => { setDraft(current => current === undefined ? current : { ...current, defaultProfile }); setFeedback('idle') }}
-                    />
-                  </Field>
-                  <Field label={t('defaultDepth')} overridden={isOverridden(snapshot.user, ['defaultDepth'])} t={t}>
-                    <Select
-                      value={draft.defaultDepth}
-                      options={snapshot.options.depths}
-                      disabled={!editable}
-                      onChange={defaultDepth => { setDraft(current => current === undefined ? current : { ...current, defaultDepth }); setFeedback('idle') }}
-                    />
-                  </Field>
                   <Field label={t('toolDiscoveryMode')} overridden={isOverridden(snapshot.user, ['toolDiscovery', 'mode'])} t={t}>
                     <Select
                       value={draft.toolDiscovery.mode}
                       options={snapshot.options.toolDiscoveryModes}
                       disabled={!editable}
                       onChange={mode => { setDraft(current => current === undefined ? current : { ...current, toolDiscovery: { mode } }); setFeedback('idle') }}
-                    />
-                  </Field>
-                  <Field label={t('maxVisibleSources')} overridden={isOverridden(snapshot.user, ['budgets', draft.defaultProfile, draft.defaultDepth, 'maxVisibleSources'])} t={t} hint={t('maxVisibleSourcesHint')}>
-                    <NumberInput
-                      label={t('maxVisibleSources')}
-                      value={draft.budgets[draft.defaultProfile]![draft.defaultDepth]!.maxVisibleSources}
-                      min={0}
-                      max={snapshot.options.visibleSourcesMax}
-                      disabled={!editable}
-                      onChange={maxVisibleSources => {
-                        setDraft(current => current === undefined ? current : {
-                          ...current,
-                          budgets: {
-                            ...current.budgets,
-                            [current.defaultProfile]: {
-                              ...current.budgets[current.defaultProfile],
-                              [current.defaultDepth]: { maxVisibleSources },
-                            },
-                          },
-                        })
-                        setFeedback('idle')
-                      }}
                     />
                   </Field>
                   <Field label={t('docsSearchMaxResults')} overridden={isOverridden(snapshot.user, ['retention', 'docsSearchMaxResults'])} t={t} hint={t('docsSearchMaxResultsHint')}>
@@ -659,7 +612,7 @@ export function SearchEnhancePluginCard({ t }: SearchEnhancePluginCardProps) {
                       }}
                     />
                   </Field>
-                  <Field label={t('toolTimeoutMs')} overridden={isOverridden(snapshot.user, ['toolTimeoutMs'])} t={t}>
+                  <Field label={t('toolTimeoutMs')} overridden={isOverridden(snapshot.user, ['toolTimeoutMs'])} t={t} hint={t('toolTimeoutHint')}>
                     <NumberInput
                       label={t('toolTimeoutMs')}
                       value={draft.toolTimeoutMs}

@@ -1,20 +1,22 @@
 import { AgentRegistry, type Agent } from '@deepseek-ai/dsh-agent'
 import { PtcRuntime, type PtcRunRequest, type PtcRunResult, type PtcRunSpec } from '@deepseek-ai/dsh-ptc-runtime'
 import { Context } from '@deepseek-ai/cordis'
-import { ToolCallId, createToolResultMessage } from '@deepseek-ai/dsh-llm'
+import { ToolCallId, createToolResultMessage, createAssistantMessage } from '@deepseek-ai/dsh-llm'
 import { createScope, type Scope, type ScopeKey } from '@deepseek-ai/dsh-scope'
-import { SessionId, SessionStore, type Session, type SessionEvent } from '@deepseek-ai/dsh-session'
+import { KNOWN_SESSION_EVENT_TYPES, SessionId, SessionStore, type Session, type SessionEvent } from '@deepseek-ai/dsh-session'
+import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { SystemPrompt, renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import { ToolRuntime, defineTool, type ToolDefinition, type ToolExecutionResult } from '@deepseek-ai/dsh-tools'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import {
-  EVIDENCE_DISCIPLINE_GUIDANCE,
-  TOOL_DISCOVERY_GUIDANCE,
-  registerToolDiscoveryGuidance,
-} from '../src/prompt/tool-discovery.js'
+import type { SourceCallIdentity, SourceRef, StoredSourceRecord } from '../src/contracts/index.js'
+import { SourceRecordStore, sourceCallIdentity } from '../src/source-storage/index.js'
 import { RESIDENT_TOOL_NAMES, installAgentToolDisclosure, type AgentToolDisclosureManager } from '../src/tool-discovery/index.js'
-import { createSearchToolsTool } from '../src/tools/search-tools.js'
+
+const cleanup: Array<() => Promise<void>> = []
+afterEach(async () => {
+  for (const dispose of cleanup.splice(0).reverse()) await dispose()
+})
 
 function textTool(name: string): ToolDefinition {
   return defineTool({
@@ -32,16 +34,31 @@ function optionalTool(name: string): ToolDefinition {
   })
 }
 
+function sourceTool(name: string, sources: SourceRecordStore): ToolDefinition {
+  return defineTool({
+    name, description: `${name} canonical source fixture`,
+    parameters: { query: { type: 'string', required: true }, behavior: { type: 'string' }, source_ref: { type: 'string' } },
+    output: {
+      schema: { type: 'object', properties: { source_ref: { type: 'string' } }, additionalProperties: false },
+      render: (_args, value) => [{ type: 'text', text: value.source_ref ?? 'source_ref: src_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' }],
+      presentationMeta: (_args, value) => ({ source_produced: value.source_ref !== undefined }),
+    },
+    async execute(args, exec) {
+      if (args.behavior === 'fail') throw new Error('Search failed')
+      if (args.behavior === 'none' || args.behavior === 'text') return {}
+      if (args.behavior === 'invalid') return { source_ref: 'not-a-source-ref' }
+      if (args.behavior === 'foreign') return { source_ref: args.source_ref! }
+      const commit = await sources.record(exec.agent!.session, sourceCallIdentity(exec), {
+        query: args.query, collectionTruncated: false,
+        sources: [{ url: 'https://example.test/doc', provider: 'search-api' }],
+      }, exec.signal)
+      if (args.behavior === 'schema') return { source_ref: 42 } as never
+      return { source_ref: String(commit.sourceRef) }
+    },
+  })
+}
+
 const BASE_WEB_SEARCH = textTool('web_search')
-const RICH_WEB_SEARCH = defineTool({
-  name: 'web_search', description: 'Rich Agent-scoped web search stub.',
-  parameters: { query: { type: 'string', required: true }, profile: { type: 'string' } },
-  output: {
-    schema: { type: 'object', properties: { source_ref: { type: 'string', required: true } }, additionalProperties: false },
-    render: (_args, value) => [{ type: 'text', text: `Source reference: ${value.source_ref}` }],
-  },
-  async execute() { return { source_ref: 'src_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' } },
-})
 
 interface TestAgent {
   readonly agent: Agent
@@ -53,260 +70,367 @@ interface TestAgent {
 interface Harness {
   readonly ctx: Context
   readonly runtime: ToolRuntime
-  readonly baseFiber: ReturnType<Context['plugin']>
+  readonly sources: SourceRecordStore
+  readonly records: Map<SourceRef, StoredSourceRecord>
+  readonly richSearch: ToolDefinition
   pluginFiber: ReturnType<Context['plugin']>
   manager: AgentToolDisclosureManager
+  denyReads: boolean
 }
 
-/** Only SDK presentation is exercised; this stub does not execute Code programs. */
-class PresentationPtcRuntime extends PtcRuntime {
+/** Exercises the real run_code bridge and SDK bindings; fixture programs are controlled by these tests. */
+class BindingPtcRuntime extends PtcRuntime {
   readonly language = 'typescript'
   readonly isolation = 'test'
-  resolve(_request: PtcRunRequest): PtcRunSpec { throw new Error('Not exercised') }
-  run(_spec: PtcRunSpec): Promise<PtcRunResult> { throw new Error('Not exercised') }
+  resolve(request: PtcRunRequest): PtcRunSpec { return { ...request, cwd: process.cwd(), timeoutMs: null } }
+  async run(spec: PtcRunSpec): Promise<PtcRunResult> {
+    const functions = spec.bindings.find(binding => binding.global === 'tools')!.functions
+    const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor
+    try { return { value: await new AsyncFunction('tools', spec.program)(functions), logs: [] } }
+    catch (error) { return { error: { kind: 'exception', message: String(error) }, logs: [] } }
+  }
 }
 
-async function createHarness(mode: 'native' | 'ptc' = 'native', discovery: 'progressive' | 'all' = 'progressive'): Promise<Harness> {
+async function createHarness(mode: 'native' | 'ptc' = 'native', discovery: 'progressive' | 'all' = 'progressive', baseSearch = true): Promise<Harness> {
   const ctx = new Context()
   new SessionStore(ctx)
   new AgentRegistry(ctx)
   new SystemPrompt(ctx, {})
-  if (mode === 'ptc') new PresentationPtcRuntime(ctx)
+  if (mode === 'ptc') new BindingPtcRuntime(ctx)
   const runtime = new ToolRuntime(ctx, { mode })
-  const baseFiber = ctx.plugin((pluginCtx: Context) => { pluginCtx.tools.register(BASE_WEB_SEARCH) })
+  const records = new Map<SourceRef, StoredSourceRecord>()
+  const table: KvTable<SourceRef, StoredSourceRecord> = {
+    get size() { return records.size },
+    get: key => records.get(key), entries: () => records.entries(), keys: () => records.keys(),
+    async put(key, value) { records.set(key, value) },
+    async delete(key) { return records.delete(key) },
+    async update(key, transform) { const value = transform(records.get(key)!); records.set(key, value); return value },
+  }
+  const sources = new SourceRecordStore(table, {
+    maxBytes: 64 * 1024, maxRecords: 100, maxSources: 10,
+    maxPageSize: 100, maxPageBytes: 64 * 1024, maxSnippetCharacters: 4000,
+  })
+  const baseFiber = ctx.plugin((pluginCtx: Context) => { if (baseSearch) pluginCtx.tools.register(BASE_WEB_SEARCH) })
   await baseFiber.await()
-  const harness = { ctx, runtime, baseFiber } as Harness
+  const richSearch = sourceTool('web_search', sources)
+  const harness = { ctx, runtime, sources, records, richSearch, denyReads: false } as Harness
   harness.pluginFiber = ctx.plugin((pluginCtx: Context) => {
-    pluginCtx.tools.register(textTool('docs_search'))
-    pluginCtx.tools.register(textTool('web_extract'))
     harness.manager = installAgentToolDisclosure(pluginCtx, {
-      mode: discovery, webSearchDefinition: RICH_WEB_SEARCH,
+      mode: discovery, webSearchDefinition: richSearch,
+      residentTools: { docs_search: sourceTool('docs_search', sources), web_extract: textTool('web_extract'), web_research: sourceTool('web_research', sources) },
       deferredTools: { sources: optionalTool('search_sources'), site_map: optionalTool('web_map') },
+      canReadSourceRef: (agent, ref) => !harness.denyReads && sources.lookup(agent.session, ref).state === 'found',
+      // The production service will expose this synchronous full-identity lookup, reusing lookup() authorization.
+      sourceRefForCall: (agent, call) => {
+        const matches = [...records.values()].filter(record => sameCall(record.call, call)
+          && sources.lookup(agent.session, record.sourceRef).state === 'found')
+        return matches.length === 1 ? matches[0]!.sourceRef : undefined
+      },
     })
-    pluginCtx.tools.register(createSearchToolsTool(harness.manager))
-    registerToolDiscoveryGuidance(pluginCtx)
   })
   await harness.pluginFiber.await()
+  cleanup.push(async () => {
+    await harness.pluginFiber.dispose()
+    await baseFiber.dispose()
+    sources.stop()
+    await sources.drain()
+    await ctx.fiber.dispose()
+  })
   return harness
 }
 
-async function createAgent(ctx: Context, id: string, options: {
-  readonly events?: readonly SessionEvent[]; readonly parent?: ScopeKey
+function sameCall(a: SourceCallIdentity, b: SourceCallIdentity): boolean {
+  return a.mode === b.mode && a.rootCallId === b.rootCallId && a.callId === b.callId && a.name === b.name
+}
+
+async function createAgent(harness: Harness, id: string, options: {
+  readonly events?: readonly SessionEvent[]; readonly parent?: ScopeKey; readonly session?: Session;
+  readonly origin?: 'subagent'
 } = {}): Promise<TestAgent> {
-  const session = ctx.sessions.create(SessionId(id), options.events === undefined ? undefined : { seed: options.events })
+  const session = options.session ?? harness.ctx.sessions.create(SessionId(id), {
+    ...(options.events === undefined ? {} : { seed: options.events }),
+    ...(options.origin === undefined ? {} : { meta: { origin: options.origin } }),
+  })
   const mutable = { id: session.id, options: {}, session, ctx: undefined } as unknown as Agent & { ctx: Context }
-  const scope = createScope(ctx, mutable, options.parent === undefined ? undefined : { parent: options.parent })
+  const scope = createScope(harness.ctx, mutable, options.parent === undefined ? undefined : { parent: options.parent })
   mutable.ctx = scope.ctx
   const agent = mutable as Agent
-  const owner = ctx.plugin((pluginCtx: Context) => { pluginCtx.agents.register(agent) })
+  const owner = harness.ctx.plugin((pluginCtx: Context) => { pluginCtx.agents.register(agent) })
   await owner.await()
-  return { agent, owner, scope, session }
+  const value = { agent, owner, scope, session }
+  cleanup.push(async () => { await owner.dispose(); await scope.dispose() })
+  return value
 }
 
-async function disposeAgent(value: TestAgent): Promise<void> {
-  await value.owner.dispose()
-  await value.scope.dispose()
+function execute(harness: Harness, agent: Agent, name: string, args: unknown, callId = ToolCallId(`${name}-${Math.random()}`)): Promise<ToolExecutionResult> {
+  return harness.runtime.execute({ callId, name, arguments: args, agent, signal: new AbortController().signal })
 }
 
-async function disposeHarness(value: Harness): Promise<void> {
-  await value.pluginFiber.dispose()
-  await value.baseFiber.dispose()
-  await value.ctx.fiber.dispose()
-}
-
-function execute(harness: Harness, agent: Agent, name: string, args: unknown): Promise<ToolExecutionResult> {
-  return harness.runtime.execute({
-    callId: ToolCallId(`${name}-${Math.random()}`), name, arguments: args,
-    agent, signal: new AbortController().signal,
-  })
-}
-
-async function load(harness: Harness, value: TestAgent, capabilities: readonly string[], step = 1, complete = true): Promise<ToolExecutionResult> {
+async function search(harness: Harness, value: TestAgent, options: {
+  readonly name?: string; readonly args?: Record<string, unknown>; readonly step?: number; readonly complete?: boolean;
+  readonly resultCallId?: string; readonly program?: string
+} = {}): Promise<ToolExecutionResult> {
+  const step = options.step ?? 1
   value.session.append('step/start', { turn: 1, step })
-  const callId = ToolCallId(`load-${step}`)
-  const args = { capabilities }
-  const call = value.session.append('tool/call', {
-    turn: 1, step, callId, name: 'search_tools', arguments: JSON.stringify(args),
-  })
-  const result = await execute(harness, value.agent, 'search_tools', args)
+  const name = options.program === undefined ? options.name ?? 'web_search' : 'run_code'
+  const callId = ToolCallId(`call-${step}`)
+  const args = options.program === undefined ? { query: 'source', ...options.args } : { code: options.program, description: 'Search fixture' }
+  const call = value.session.append('tool/call', { turn: 1, step, callId, name, arguments: JSON.stringify(args) })
+  const result = await execute(harness, value.agent, name, args, callId)
   value.session.append('tool/result', {
-    turn: 1, step, message: createToolResultMessage({ callId, content: [...result.content], isError: result.isError }),
+    turn: 1, step,
+    message: createToolResultMessage({ callId: ToolCallId(options.resultCallId ?? callId), content: [...result.content], isError: result.isError }),
+    ...(result.meta === undefined ? {} : { meta: result.meta }),
+    ...(result.error?.info === undefined ? {} : { error: result.error.info }),
   }, { sourceEventSeqs: [call.seq], surfaceOp: 'append' })
-  if (complete) value.session.append('step/end', { turn: 1, step })
+  if (options.complete !== false) value.session.append('step/end', { turn: 1, step })
   return result
 }
 
 function names(harness: Harness, agent: Agent): string[] {
-  return harness.runtime.schemas(agent).map(tool => tool.name).sort()
+  return [...RESIDENT_TOOL_NAMES, 'search_sources', 'web_map', 'search_tools'].filter(name => harness.runtime.get(name, agent) !== undefined).sort()
 }
 
-async function assembly(harness: Harness, agent: Agent) {
+function assembly(harness: Harness, agent: Agent) {
   return harness.ctx.systemPrompt.assemble({ scope: agent, agent })
 }
 
-describe('on-demand real tools with the DSH runtime', () => {
-  it('keeps routing, optional-tool timing, safety and evidence rules in shorter guidance', () => {
-    expect(TOOL_DISCOVERY_GUIDANCE).toMatch(/docs_search.*known library identity.*omit.*broad\/cross-project.*unknown-library.*auto uses Exa/u)
-    expect(TOOL_DISCOVERY_GUIDANCE).toContain('Never guess a Context7 library')
-    expect(TOOL_DISCOVERY_GUIDANCE).toMatch(/web_extract.*exactly one enabled Provider.*web_fetch.*structured responses/u)
-    expect(TOOL_DISCOVERY_GUIDANCE).toMatch(/Prefer HTTPS.*title\/app shell.*not usable page-body evidence.*instead of refetching/u)
-    expect(TOOL_DISCOVERY_GUIDANCE).toContain('Never bypass URL safety checks')
-    expect(TOOL_DISCOVERY_GUIDANCE).toMatch(/sources via search_tools for source_ref pagination.*site_map.*known site/u)
-    expect(TOOL_DISCOVERY_GUIDANCE).toMatch(/newly loaded search_sources\/web_map directly on the next model step.*reuse loaded tools.*not load preemptively/u)
-    expect(EVIDENCE_DISCIPLINE_GUIDANCE).toMatch(/one focused web_search.*docs_search for SDK\/API docs/u)
-    expect(EVIDENCE_DISCIPLINE_GUIDANCE).toMatch(/do not inspect local files\/settings\/sessions\/credentials unless the user explicitly asks/u)
-    expect(EVIDENCE_DISCIPLINE_GUIDANCE).toMatch(/answers\/snippets.*source metadata.*mapped URLs.*discovery, not claim-level evidence/u)
-    expect(EVIDENCE_DISCIPLINE_GUIDANCE).toMatch(/factual\/causal conclusions.*authoritative URLs with web_extract.*inference or unconfirmed, never source-stated fact/u)
-    expect(TOOL_DISCOVERY_GUIDANCE.length + EVIDENCE_DISCIPLINE_GUIDANCE.length).toBeLessThan(2189)
+const MAIN = [...RESIDENT_TOOL_NAMES].sort()
+
+describe('role disclosure and automatic pagination with the real DSH runtime', () => {
+  it('registers only the default main collection and the richer inherited web_search schema', async () => {
+    const h = await createHarness()
+    const a = await createAgent(h, 'main')
+    expect(names(h, a.agent)).toEqual(MAIN)
+    expect(h.runtime.schemas(a.agent).map(tool => tool.name).sort()).toEqual(MAIN)
+    expect(h.runtime.get('web_search', a.agent)).toBe(h.richSearch)
+    expect((await assembly(h, a.agent)).tools.map(tool => tool.name).sort()).toEqual(MAIN)
+    expect((await execute(h, a.agent, 'web_search', {})).isError).toBe(true)
+    expect((await execute(h, a.agent, 'web_map', { value: 'not exposed' })).isError).toBe(true)
+    expect((await execute(h, a.agent, 'search_tools', { capabilities: ['sources'] })).isError).toBe(true)
   })
 
-  it('loads on the next Native step, isolates Agents, and calls real tools directly', async () => {
-    const harness = await createHarness()
-    const a = await createAgent(harness.ctx, 'native-a')
-    const b = await createAgent(harness.ctx, 'native-b')
-    try {
-      expect(names(harness, a.agent)).toEqual([...RESIDENT_TOOL_NAMES].sort())
-      expect(renderPrompt(await assembly(harness, a.agent))).toContain(TOOL_DISCOVERY_GUIDANCE)
-      expect(renderPrompt(await assembly(harness, a.agent))).toContain(EVIDENCE_DISCIPLINE_GUIDANCE)
-      expect(harness.runtime.get('search_call', a.agent)).toBeUndefined()
-      expect((await execute(harness, a.agent, 'web_map', { value: 'x' })).isError).toBe(true)
-      expect(await load(harness, a, ['site_map'], 1, false)).toMatchObject({
-        isError: false, value: { tools: ['web_map'], takes_effect: 'next_step' },
-      })
-      expect(harness.runtime.get('web_map', a.agent)).toBeUndefined()
-      a.session.append('step/end', { turn: 1, step: 1 })
-      expect(names(harness, a.agent)).toEqual([...RESIDENT_TOOL_NAMES, 'web_map'].sort())
-      expect(names(harness, b.agent)).toEqual([...RESIDENT_TOOL_NAMES].sort())
-      expect(await execute(harness, a.agent, 'web_map', { value: 'mapped' })).toMatchObject({ isError: false, value: 'mapped' })
-      expect(await execute(harness, a.agent, 'web_map', {})).toMatchObject({ isError: true, error: { info: { code: 'INVALID_ARGS' } } })
-      const search = await execute(harness, a.agent, 'web_search', { query: 'source' })
-      expect(search.isError).toBe(false)
-      expect(harness.runtime.get('search_sources', a.agent)).toBeUndefined()
-      await load(harness, a, ['sources'], 2)
-      expect(await execute(harness, a.agent, 'search_sources', { value: 'page' })).toMatchObject({ isError: false, value: 'page' })
-      const recovered = await createAgent(harness.ctx, 'native-recovered', { events: a.session.snapshotEvents() })
-      try {
-        expect(names(harness, recovered.agent)).toEqual(names(harness, a.agent))
-        expect(await execute(harness, recovered.agent, 'web_map', { value: 'restored' })).toMatchObject({ isError: false, value: 'restored' })
-      } finally { await disposeAgent(recovered) }
-    } finally {
-      await disposeAgent(b)
-      await disposeAgent(a)
-      await disposeHarness(harness)
-    }
+  it.each([false, true])('respects absent or filtered host web_search (filtered=%s)', async filtered => {
+    const h = await createHarness('native', 'progressive', filtered)
+    const parent: ScopeKey = {}
+    const preset = createScope(h.ctx, parent)
+    cleanup.push(() => preset.dispose())
+    if (filtered) preset.ctx.tools.restrict({ deny: ['web_search'] })
+    const a = await createAgent(h, 'restricted', { parent })
+    expect(names(h, a.agent)).toEqual(MAIN.filter(name => name !== 'web_search'))
+    expect(h.runtime.get('web_search', a.agent)).toBeUndefined()
   })
 
-  it('adds real Code SDK entries, keeps run_code schema stable, and restores standard dispatch history', async () => {
-    const harness = await createHarness('ptc')
-    const agent = await createAgent(harness.ctx, 'code-loading')
-    try {
-      const before = await assembly(harness, agent.agent)
-      expect(renderPrompt(before)).toContain(TOOL_DISCOVERY_GUIDANCE)
-      expect(renderPrompt(before)).toContain(EVIDENCE_DISCIPLINE_GUIDANCE)
-      expect(before.tools.map(tool => tool.name)).toEqual(['run_code'])
-      expect(renderPrompt(before)).not.toMatch(/\n\s+web_map: \{/u)
-      agent.session.append('step/start', { turn: 1, step: 1 })
-      agent.session.append('tool/ptc-dispatch', {
-        rootCallId: ToolCallId('code'), parentCallId: ToolCallId('code'), subCallId: ToolCallId('code:ptc:1'),
-        name: 'search_tools', arguments: { capabilities: ['site_map'] }, isError: false, content: [],
-      })
-      expect(harness.runtime.get('web_map', agent.agent)).toBeUndefined()
-      agent.session.append('step/end', { turn: 1, step: 1 })
-      const after = await assembly(harness, agent.agent)
-      expect(after.tools).toEqual(before.tools)
-      expect(renderPrompt(after)).toMatch(/\n\s+web_map: \{/u)
-      expect(renderPrompt(after)).not.toContain('search_call:')
-      const recovered = await createAgent(harness.ctx, 'code-recovered', { events: agent.session.snapshotEvents() })
-      try { expect(renderPrompt(await assembly(harness, recovered.agent))).toEqual(renderPrompt(after)) }
-      finally { await disposeAgent(recovered) }
-    } finally {
-      await disposeAgent(agent)
-      await disposeHarness(harness)
-    }
+  it.each(['web_search', 'docs_search', 'web_research'])('enables pagination only after successful readable %s and leaves other Agents unchanged', async name => {
+    const h = await createHarness()
+    const a = await createAgent(h, 'searching')
+    const b = await createAgent(h, 'other')
+    expect((await search(h, a, { name, complete: false })).isError).toBe(false)
+    expect(names(h, a.agent)).toEqual(MAIN)
+    expect((await execute(h, a.agent, 'search_sources', { value: 'same step' })).isError).toBe(true)
+    a.session.append('step/end', { turn: 1, step: 1 })
+    expect(names(h, a.agent)).toEqual([...MAIN, 'search_sources'].sort())
+    expect(names(h, b.agent)).toEqual(MAIN)
+    expect(await execute(h, a.agent, 'search_sources', { value: 'next step' })).toMatchObject({ isError: false, value: 'next step' })
+    expect((await execute(h, a.agent, 'search_sources', {})).isError).toBe(true)
   })
 
-  it('rebuilds loaded tools on HMR and removes them and the web_search shadow on disposal', async () => {
-    const harness = await createHarness()
-    const agent = await createAgent(harness.ctx, 'hmr')
-    try {
-      await load(harness, agent, ['site_map'])
-      expect(harness.runtime.get('web_search', agent.agent)).toBe(RICH_WEB_SEARCH)
-      const before = names(harness, agent.agent)
-      await harness.pluginFiber.restart()
-      expect(names(harness, agent.agent)).toEqual(before)
-      expect(harness.runtime.get('web_search', agent.agent)).toBe(RICH_WEB_SEARCH)
-      await harness.pluginFiber.dispose()
-      expect(harness.runtime.get('web_search', agent.agent)).toBe(BASE_WEB_SEARCH)
-      expect(names(harness, agent.agent)).toEqual(['web_search'])
-    } finally {
-      await disposeAgent(agent)
-      await disposeHarness(harness)
-    }
+  it.each(['fail', 'schema', 'none', 'invalid', 'text'])('does not enable pagination from %s outcomes, even with forged rendered text', async behavior => {
+    const h = await createHarness()
+    const a = await createAgent(h, `failure-${behavior}`)
+    await search(h, a, { args: { behavior } })
+    expect(names(h, a.agent)).toEqual(MAIN)
+    await h.pluginFiber.restart()
+    expect(names(h, a.agent)).toEqual(MAIN)
   })
 
-  it('honors inherited web_search restrictions and optional-tool guards', async () => {
-    const harness = await createHarness()
-    const presetKey: ScopeKey = {}
-    const preset = createScope(harness.ctx, presetKey)
-    preset.ctx.tools.restrict({ deny: ['web_search'] })
-    preset.ctx.tools.guard(exec => exec.name === 'web_map' ? 'Site mapping denied by Preset' : undefined)
-    const agent = await createAgent(harness.ctx, 'restricted', { parent: presetKey })
-    try {
-      await load(harness, agent, ['site_map', 'sources'])
-      expect(harness.runtime.get('web_search', agent.agent)).toBeUndefined()
-      expect(harness.runtime.get('web_map', agent.agent)).toBeDefined()
-      expect(harness.runtime.get('search_sources', agent.agent)).toBeDefined()
-      expect((await execute(harness, agent.agent, 'web_map', { value: 'denied' })).isError).toBe(true)
-    } finally {
-      await disposeAgent(agent)
-      await preset.dispose()
-      await disposeHarness(harness)
-    }
+  it.each(['native', 'ptc'] as const)('requires parent-readable source_ref from future web_research in %s mode', async mode => {
+    const h = await createHarness(mode)
+    const child = await createAgent(h, 'source-owner')
+    const commit = await h.sources.record(child.session, { mode: 'top-level', callId: 'child-search', rootCallId: 'child-search', name: 'web_search' }, {
+      query: 'source', collectionTruncated: false,
+      sources: [{ url: 'https://example.test/private', provider: 'search-api' }],
+    }, new AbortController().signal)
+    const a = await createAgent(h, 'research-parent')
+    const args = { behavior: 'foreign', source_ref: commit.sourceRef }
+    await search(h, a, mode === 'native' ? { name: 'web_research', args } : {
+      program: `return await tools.web_research(${JSON.stringify({ query: 'source', ...args })})`,
+    })
+    expect(names(h, a.agent)).toEqual(MAIN)
   })
 
-  it('runs the host policy pipeline once using the real optional tool name', async () => {
-    const harness = await createHarness()
+  it('rechecks authorization at step/end rather than exposing a revoked ref', async () => {
+    const h = await createHarness()
+    const a = await createAgent(h, 'revoked')
+    await search(h, a, { complete: false })
+    h.denyReads = true
+    a.session.append('step/end', { turn: 1, step: 1 })
+    expect(names(h, a.agent)).toEqual(MAIN)
+  })
+
+  it('rejects unpaired Native results and interruptions even after real successful execution', async () => {
+    const h = await createHarness()
+    const a = await createAgent(h, 'unpaired')
+    await search(h, a, { resultCallId: 'unmatched' })
+    expect(names(h, a.agent)).toEqual(MAIN)
+    await search(h, a, { step: 2, complete: false })
+    a.session.append('step/start', { turn: 2, step: 1 })
+    a.session.append('step/end', { turn: 2, step: 1 })
+    expect(names(h, a.agent)).toEqual(MAIN)
+  })
+
+  it('does not register twice after repeated successes and later empty steps', async () => {
+    const h = await createHarness()
+    const a = await createAgent(h, 'repeat')
+    const register = vi.spyOn(a.agent.ctx.tools, 'register')
+    await search(h, a)
+    await search(h, a, { step: 2 })
+    a.session.append('step/start', { turn: 1, step: 3 })
+    a.session.append('step/end', { turn: 1, step: 3 })
+    expect(register.mock.calls.filter(([tool]) => tool.name === 'search_sources')).toHaveLength(1)
+    expect(names(h, a.agent)).toEqual([...MAIN, 'search_sources'].sort())
+  })
+
+  it('uses standard PTC dispatches and adds SDK entries only on the next step', async () => {
+    const h = await createHarness('ptc')
+    const a = await createAgent(h, 'code-search')
+    const before = await assembly(h, a.agent)
+    expect(before.tools.map(tool => tool.name)).toEqual(['run_code'])
+    expect(renderPrompt(before)).toMatch(/\n\s+web_research: \{/u)
+    expect(renderPrompt(before)).not.toMatch(/\n\s+(search_sources|web_map|search_tools): \{/u)
+    expect((await search(h, a, { program: 'return await tools.docs_search({query: "source"})', complete: false })).isError).toBe(false)
+    expect(a.session.snapshotEvents().some(event => event.type === 'tool/ptc-dispatch-start')).toBe(true)
+    expect(a.session.snapshotEvents().some(event => event.type === 'tool/ptc-dispatch' && event.data.name === 'docs_search' && !event.data.isError)).toBe(true)
+    expect(names(h, a.agent)).toEqual(MAIN)
+    expect((await execute(h, a.agent, 'run_code', { code: 'return await tools.search_sources({value: "too early"})', description: 'Same step' })).isError).toBe(true)
+    a.session.append('step/end', { turn: 1, step: 1 })
+    const after = await assembly(h, a.agent)
+    expect(after.tools).toEqual(before.tools)
+    expect(renderPrompt(after)).toMatch(/\n\s+search_sources: \{/u)
+    expect(renderPrompt(after)).not.toMatch(/\n\s+(web_map|search_tools): \{/u)
+    expect((await search(h, a, { step: 2, program: 'return await tools.search_sources({value: "page"})' })).isError).toBe(false)
+  })
+
+  it.each(['fail', 'schema', 'invalid', 'text'])('ignores %s PTC subcall outcomes and reconstructs without parsing outer code text', async behavior => {
+    const h = await createHarness('ptc')
+    const a = await createAgent(h, `code-${behavior}`)
+    await search(h, a, { program: `try { await tools.web_search({query: "source", behavior: "${behavior}"}) } catch {} return "source_ref: src_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"` })
+    expect(names(h, a.agent)).toEqual(MAIN)
+    await h.pluginFiber.restart()
+    expect(names(h, a.agent)).toEqual(MAIN)
+  })
+
+  it.each(['native', 'ptc'] as const)('replays and HMR-rebuilds %s successes via private call lookup with existing fork authorization', async mode => {
+    const h = await createHarness(mode)
+    const a = await createAgent(h, 'original')
+    await search(h, a, mode === 'native' ? {} : { program: 'return await tools.web_search({query: "source"})' })
+    const before = names(h, a.agent)
+    expect(before).toContain('search_sources')
+    expect(a.session.snapshotEvents().every(event => KNOWN_SESSION_EVENT_TYPES.has(event.type))).toBe(true)
+    await h.pluginFiber.restart()
+    expect(names(h, a.agent)).toEqual(before)
+    const fork = h.ctx.sessions.fork(a.session, undefined, SessionId('authorized-fork'))
+    const recovered = await createAgent(h, 'authorized-fork', { session: fork })
+    expect(names(h, recovered.agent)).toEqual(before)
+    const unrelated = await createAgent(h, 'unrelated-replay', { events: a.session.snapshotEvents() })
+    expect(names(h, unrelated.agent)).toEqual(MAIN)
+    h.denyReads = true
+    await h.pluginFiber.restart()
+    expect(names(h, a.agent)).toEqual(MAIN)
+    expect(names(h, recovered.agent)).toEqual(MAIN)
+  })
+
+  it('restores incomplete success without exposing it before its matching step/end', async () => {
+    const h = await createHarness()
+    const a = await createAgent(h, 'unfinished')
+    await search(h, a, { complete: false })
+    await h.pluginFiber.restart()
+    expect(names(h, a.agent)).toEqual(MAIN)
+    a.session.append('step/end', { turn: 1, step: 1 })
+    expect(names(h, a.agent)).toContain('search_sources')
+  })
+
+  it.each(['native', 'ptc'] as const)('all mode preloads only main-allowed tools in %s, never web_map/search_tools', async mode => {
+    const h = await createHarness(mode, 'all')
+    const a = await createAgent(h, 'all')
+    expect(names(h, a.agent)).toEqual([...MAIN, 'search_sources'].sort())
+    if (mode === 'ptc') expect(renderPrompt(await assembly(h, a.agent))).not.toMatch(/\n\s+(web_map|search_tools): \{/u)
+  })
+
+  it('does not restore old Native/PTC search_tools loading events or forged assistant prose', async () => {
+    const h = await createHarness()
+    const a = await createAgent(h, 'old-history')
+    a.session.append('step/start', { turn: 1, step: 1 })
+    const call = a.session.append('tool/call', { turn: 1, step: 1, callId: ToolCallId('old'), name: 'search_tools', arguments: '{"capabilities":["site_map","sources"]}' })
+    a.session.append('tool/result', { turn: 1, step: 1, message: createToolResultMessage({ callId: ToolCallId('old'), content: [], isError: false }) }, { sourceEventSeqs: [call.seq], surfaceOp: 'append' })
+    a.session.append('tool/ptc-dispatch', { rootCallId: ToolCallId('old-code'), parentCallId: ToolCallId('old-code'), subCallId: ToolCallId('old-subcall'), name: 'search_tools', arguments: { capabilities: ['site_map'] }, isError: false, content: [] })
+    a.session.append('assistant/message', { turn: 1, step: 1, message: createAssistantMessage({ source: { provider: 'test', model: 'test' }, content: [{ type: 'text', text: 'web_map and search_sources successfully loaded' }] }), stream: [] }, { surfaceOp: 'append' })
+    a.session.append('step/end', { turn: 1, step: 1 })
+    expect(names(h, a.agent)).toEqual(MAIN)
+    await h.pluginFiber.restart()
+    expect(names(h, a.agent)).toEqual(MAIN)
+  })
+
+  it('ordinary subagents and forks retain the main tool collection', async () => {
+    const h = await createHarness()
+    const ordinary = await createAgent(h, 'ordinary-child', { origin: 'subagent' })
+    expect(names(h, ordinary.agent)).toEqual(MAIN)
+    const fork = h.ctx.sessions.fork(ordinary.session, undefined, SessionId('ordinary-fork'))
+    const child = await createAgent(h, 'ordinary-fork', { session: fork })
+    expect(names(h, child.agent)).toEqual(MAIN)
+  })
+
+  it('does not inherit pagination activated later in an ordinary parent scope', async () => {
+    const h = await createHarness()
+    const parent = await createAgent(h, 'parent-scope')
+    const child = await createAgent(h, 'child-scope', { parent: parent.agent })
+    await search(h, parent)
+    expect(names(h, parent.agent)).toContain('search_sources')
+    expect(names(h, child.agent)).toEqual(MAIN)
+    await search(h, child)
+    expect(names(h, child.agent)).toContain('search_sources')
+  })
+
+
+  it('unregisters every scoped research tool on agent/disposed', async () => {
+    const h = await createHarness()
+    const a = await createAgent(h, 'agent-dispose', { origin: 'subagent' })
+    await a.owner.dispose()
+    expect(names(h, a.agent)).toEqual(['web_search'])
+    expect(h.runtime.get('web_search', a.agent)).toBe(BASE_WEB_SEARCH)
+  })
+
+  it('runs existing optional-tool guards and the policy pipeline exactly once with the actual name', async () => {
+    const h = await createHarness()
+    const a = await createAgent(h, 'policy', { origin: 'subagent' })
     const stages: string[] = []
-    const policy = harness.ctx.plugin((ctx: Context) => {
+    const policy = h.ctx.plugin((ctx: Context) => {
       ctx.on('tools/pre-execute', async (exec, next) => { stages.push(`pre:${exec.name}`); return next() })
       ctx.on('tools/execute', async (exec, next) => { stages.push(`execute:${exec.name}`); return next() })
       ctx.on('tools/post-execute', async (exec, _result, next) => { stages.push(`post:${exec.name}`); return next() })
       ctx.on('tools/result', exec => { stages.push(`result:${exec.name}`) })
     })
     await policy.await()
-    const agent = await createAgent(harness.ctx, 'policy')
-    try {
-      await load(harness, agent, ['site_map'])
-      stages.length = 0
-      expect(await execute(harness, agent.agent, 'web_map', { value: 'policy' })).toMatchObject({ isError: false, value: 'policy' })
-      expect(stages).toEqual(['pre:web_map', 'execute:web_map', 'post:web_map', 'result:web_map'])
-    } finally {
-      await disposeAgent(agent)
-      await policy.dispose()
-      await disposeHarness(harness)
-    }
+    cleanup.push(() => policy.dispose())
+    await search(h, a)
+    stages.length = 0
+    expect(await execute(h, a.agent, 'search_sources', { value: 'policy' })).toMatchObject({ isError: false, value: 'policy' })
+    expect(stages).toEqual(['pre:search_sources', 'execute:search_sources', 'post:search_sources', 'result:search_sources'])
+    a.agent.ctx.tools.guard(exec => exec.name === 'search_sources' ? 'Pagination denied' : undefined)
+    expect((await execute(h, a.agent, 'search_sources', { value: 'denied' })).isError).toBe(true)
   })
 
-  it('keeps all mode as immediate registration and does not load invalid requests', async () => {
-    const all = await createHarness('native', 'all')
-    const allAgent = await createAgent(all.ctx, 'all')
-    try {
-      expect(names(all, allAgent.agent)).toEqual([...RESIDENT_TOOL_NAMES, 'search_sources', 'web_map'].sort())
-      expect(await execute(all, allAgent.agent, 'search_tools', { capabilities: ['sources'] })).toMatchObject({
-        isError: false, value: { takes_effect: 'already_active', added_groups: [] },
-      })
-    } finally {
-      await disposeAgent(allAgent)
-      await disposeHarness(all)
+  it('cleans up shadows, all role registrations, restrictions and listeners on disposal', async () => {
+    const h = await createHarness()
+    const a = await createAgent(h, 'dispose-main')
+    const research = await createAgent(h, 'dispose-research', { origin: 'subagent' })
+    await search(h, a)
+    await h.pluginFiber.dispose()
+    for (const value of [a, research]) {
+      expect(names(h, value.agent)).toEqual(['web_search'])
+      expect(h.runtime.get('web_search', value.agent)).toBe(BASE_WEB_SEARCH)
     }
-    const progressive = await createHarness()
-    const agent = await createAgent(progressive.ctx, 'invalid')
-    try {
-      expect((await load(progressive, agent, ['planning'])).isError).toBe(true)
-      expect(names(progressive, agent.agent)).toEqual([...RESIDENT_TOOL_NAMES].sort())
-    } finally {
-      await disposeAgent(agent)
-      await disposeHarness(progressive)
-    }
+    await search(h, a, { step: 2, name: 'docs_search' })
+    expect(names(h, a.agent)).toEqual(['web_search'])
   })
 })

@@ -14,7 +14,6 @@ import type { Entry } from '@deepseek-ai/cordis-plugin-loader'
 import {
   Config,
   SUPPLEMENTAL_SEARCH_MAX_SOURCES,
-  SEARCH_PROFILES,
   WEB_EXTRACT_PROXY_URL_MAX_CHARACTERS,
   type Config as SearchEnhanceConfig,
 } from '../src/config.js'
@@ -277,6 +276,10 @@ describe('Search Enhance Web configuration Host bridge', () => {
     })
     expect(snapshot.value.webExtract).toMatchObject(snapshot.user?.webExtract ?? {})
     expect(snapshot.options.proxyUrlMaxCharacters).toBe(WEB_EXTRACT_PROXY_URL_MAX_CHARACTERS)
+    for (const layer of [snapshot.value, snapshot.base, snapshot.user]) {
+      expect(layer).not.toHaveProperty('research')
+    }
+    expect(Object.keys(snapshot.options).some(key => key.startsWith('research'))).toBe(false)
     expect(snapshot.credentials.searchApi).toEqual({
       ref: 'TEST_GROK_SEARCH_KEY',
       configured: true,
@@ -289,26 +292,73 @@ describe('Search Enhance Web configuration Host bridge', () => {
     expect(text).not.toContain('must-not-change')
   })
 
-  it('edits initial visibility and the docs request ceiling without changing collection or text budgets', async () => {
+  it('omits stored research fields from snapshots and rejects their Web updates without rewriting settings', async () => {
+    const document = initialDocument()
+    ;(document['search-enhance'] as Record<string, unknown>)['research'] = { timeoutMs: 1_200_000 }
+    const harness = await createHarness(document)
+    const before = harness.editor.snapshotDocument()
+    const snapshot = await (await fetch(`${harness.origin}${WEB_CONFIG_PATH}`)).json() as WebConfigSnapshot
+    for (const layer of [snapshot.value, snapshot.base, snapshot.user]) {
+      expect(layer).not.toHaveProperty('research')
+    }
+    expect(Object.keys(snapshot.options).some(key => key.startsWith('research'))).toBe(false)
+    expect(WEB_EDITABLE_PATHS.some(path => path[0] === 'research')).toBe(false)
+    for (const mutation of [
+      { op: 'set', path: ['research', 'timeoutMs'], value: 900_000 },
+      { op: 'unset', path: ['research', 'timeoutMs'] },
+    ]) {
+      const rejected = await mutate(harness, { expectedRevision: snapshot.revision, mutations: [mutation] })
+      expect(rejected.status).toBe(400)
+      expect((await json(rejected)).error).toMatchObject({ code: 'invalid-mutation-path' })
+      expect(harness.editor.snapshotDocument()).toEqual(before)
+    }
+  })
+
+  it('saves independent single-tool and provider timeouts without changing unrelated configuration', async () => {
+    const harness = await createHarness()
+    const before = structuredClone(harness.editor.configuration()[0]!.entry.options.config)
+    const updated = await mutate(harness, { expectedRevision: 0, mutations: [
+      { op: 'set', path: ['toolTimeoutMs'], value: 90_000 },
+      { op: 'set', path: ['searchApi', 'timeoutMs'], value: 30_000 },
+      { op: 'set', path: ['providers', 'exa', 'timeoutMs'], value: 45_000 },
+    ] })
+    expect(updated.status).toBe(200)
+    const snapshot = await updated.json() as WebConfigSnapshot
+    expect(snapshot.value.toolTimeoutMs).toBe(90_000)
+    expect(snapshot.value.searchApi.timeoutMs).toBe(30_000)
+    expect(snapshot.value.providers.exa.timeoutMs).toBe(45_000)
+    expect(snapshot.value).not.toHaveProperty('research')
+    expect(harness.editor.configuration()[0]!.entry.fiber!.config).toMatchObject({
+      toolTimeoutMs: 90_000, searchApi: { timeoutMs: 30_000 }, providers: { exa: { timeoutMs: 45_000 } },
+    })
+    expect(Config(harness.editor.configuration()[0]!.entry.options.config as never).webExtract).toEqual(Config(before as never).webExtract)
+    expect(harness.credentials.setCalls).toEqual([])
+    expect(harness.credentials.unsetCalls).toEqual([])
+  })
+
+  it('keeps docs request settings editable but rejects removed strategy settings', async () => {
     const harness = await createHarness()
     const before = Config(harness.editor.configuration()[0]!.entry.options.config as never)
     const updated = await mutate(harness, { expectedRevision: 0, mutations: [
-      { op: 'set', path: ['budgets', 'auto', 'compact', 'maxVisibleSources'], value: 16 },
       { op: 'set', path: ['retention', 'docsSearchMaxResults'], value: 10 },
     ] })
     expect(updated.status).toBe(200)
     const snapshot = await updated.json() as WebConfigSnapshot
-    expect(snapshot.value.budgets.auto?.compact?.maxVisibleSources).toBe(16)
     expect(snapshot.value.retention.docsSearchMaxResults).toBe(10)
-    expect(snapshot.user?.budgets?.auto?.compact).toEqual({ maxVisibleSources: 16 })
+    expect(snapshot.value).not.toHaveProperty('defaultProfile')
+    expect(snapshot.value).not.toHaveProperty('defaultDepth')
+    expect(snapshot.value).not.toHaveProperty('budgets')
+    expect(snapshot.options).not.toHaveProperty('profiles')
+    expect(snapshot.options).not.toHaveProperty('depths')
     const after = Config(harness.editor.configuration()[0]!.entry.options.config as never)
-    expect(after.budgets.auto.compact.maxModelTextBytes).toBe(before.budgets.auto.compact.maxModelTextBytes)
     expect(after.supplementalSearch).toEqual(before.supplementalSearch)
-    for (const mutation of [
-      { op: 'set', path: ['budgets', 'auto', 'compact', 'maxVisibleSources'], value: 1001 },
+    expect((await mutate(harness, { expectedRevision: 1, mutations: [
       { op: 'set', path: ['retention', 'docsSearchMaxResults'], value: 21 },
-    ]) {
-      expect((await mutate(harness, { expectedRevision: 1, mutations: [mutation] })).status).toBe(422)
+    ] })).status).toBe(422)
+    for (const path of [['defaultProfile'], ['defaultDepth'], ['budgets', 'auto', 'compact', 'maxVisibleSources']]) {
+      expect((await mutate(harness, { expectedRevision: 1, mutations: [
+        { op: 'set', path, value: 16 },
+      ] })).status).toBe(400)
     }
   })
   it('edits supplemental selections and extract allowlist independently with bounded limits', async () => {
@@ -427,7 +477,7 @@ describe('Search Enhance Web configuration Host bridge', () => {
   it('maps revision conflicts, schema rejection, invalid paths, and infrastructure failures safely', async () => {
     const harness = await createHarness()
     const row = harness.editor.configuration()[0]!
-    await harness.editor.edit(row.entry, current => ({ ...current, defaultDepth: 'normal' }))
+    await harness.editor.edit(row.entry, current => ({ ...current, toolTimeoutMs: 90_000 }))
 
     const conflict = await mutate(harness, {
       expectedRevision: 0,

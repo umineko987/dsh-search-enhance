@@ -5,7 +5,7 @@ import {
 } from '@deepseek-ai/dsh-tools'
 import type { Session } from '@deepseek-ai/dsh-session'
 
-import type { Config } from '../config.js'
+import { WEB_SEARCH_OUTPUT_BUDGET, type Config } from '../config.js'
 import type { SearchOrchestrationResult } from '../orchestration/index.js'
 import type { SearchOrchestrator } from '../orchestration/orchestrator.js'
 import {
@@ -83,8 +83,7 @@ export function projectWebSearchOutput(
     ...(source.snippet === undefined ? {} : { snippet: source.snippet }),
     ...(source.publishedAt === undefined ? {} : { publishedAt: source.publishedAt }),
   }))
-  const modelTextMaxBytes = config.budgets[result.persistence.profile][result.persistence.depth]
-    .maxModelTextBytes
+  const modelTextMaxBytes = WEB_SEARCH_OUTPUT_BUDGET.maxModelTextBytes
   return boundWebSearchOutput({
     state: result.canonical.state,
     ...(result.canonical.answer === undefined ? {} : { answer: result.canonical.answer }),
@@ -201,8 +200,6 @@ async function executeWebSearch(
   throwIfAborted(signal)
   const result = await dependencies.orchestrator.search({
     query: args.query,
-    ...(args.profile === undefined ? {} : { profile: args.profile }),
-    ...(args.depth === undefined ? {} : { depth: args.depth }),
     config,
     signal,
   })
